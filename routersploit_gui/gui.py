@@ -488,6 +488,10 @@ class RouterSploitGUI:
             self._add_console_output("❌ No module selected", "error")
             return
 
+        if self.runner_manager.is_running():
+            self._add_console_output("⚠️ Another module is already running!", "warning")
+            return
+
         options = {}
         missing_required = []
 
@@ -498,13 +502,21 @@ class RouterSploitGUI:
             
             value = values.get(input_key, "").strip()
 
+            # Special handling for target history
             if opt_name.lower() in ["target", "rhost", "host"]:
                 history_value = values.get("-TARGET_HISTORY-", "").strip()
                 if history_value:
                     value = history_value
 
             if value:
-                options[opt_name] = value
+                # Convert value to the correct type based on the stored original value
+                try:
+                    original_value = opt_info.get("original_value")
+                    converted_value = self._convert_option_value(value, original_value)
+                    options[opt_name] = converted_value
+                except Exception as e:
+                    self._add_console_output(f"⚠️ Warning: Could not convert option '{opt_name}' value '{value}': {str(e)}", "warning")
+                    options[opt_name] = value  # Fallback to string
             elif opt_info.get("required", False):
                 missing_required.append(opt_name)
 
@@ -516,15 +528,72 @@ class RouterSploitGUI:
         
         target_value = options.get("target") or options.get("rhost")
         if target_value:
-            self._add_to_history(target_value)
+            self._add_to_history(str(target_value))
 
+        # Clear console and start execution
+        self.window["-CONSOLE-"].update("")
         self._add_console_output(f"🚀 Starting module: {self.current_module.name}", "info")
-        self._add_console_output(f"   Options: {json.dumps(options)}", "debug")
-        self.runner_manager.run_module(self.current_module, options)
+        self._add_console_output(f"📋 Options: {json.dumps(options, default=str)}", "info")
+        self._update_status(f"🔄 Running: {self.current_module.name}")
 
+        # Update button states
         self.window["-RUN-"].update(disabled=True)
         self.window["-STOP-"].update(disabled=False)
+
+        # Start the runner using the correct method
+        success = self.runner_manager.start_module(
+            self.current_module,
+            options,
+            self._add_console_output,
+            self._handle_module_complete,
+        )
+
+        if not success:
+            self._add_console_output("❌ Failed to start module execution", "error")
+            self._reset_controls()
+
+    def _convert_option_value(self, user_input: str, original_value: Any) -> Any:
+        """Convert user input to the correct data type based on the original module value.
         
+        Args:
+            user_input: The string value from the GUI input
+            original_value: The original value from the module to determine type
+            
+        Returns:
+            Converted value of the correct type or string format RouterSploit expects
+        """
+        if original_value is None:
+            return user_input
+            
+        # Get the type of the original value
+        original_type = type(original_value)
+        
+        try:
+            if original_type == bool:
+                # RouterSploit modules expect lowercase string "true"/"false" for boolean options
+                # The module's property setter will convert these to actual boolean values
+                lower_input = user_input.lower()
+                if lower_input in ['true', '1', 'yes', 'on']:
+                    return 'true'  # RouterSploit expects lowercase string
+                elif lower_input in ['false', '0', 'no', 'off']:
+                    return 'false'  # RouterSploit expects lowercase string
+                else:
+                    # Default to false for any other input
+                    return 'false'
+            elif original_type == int:
+                return int(user_input)
+            elif original_type == float:
+                return float(user_input)
+            elif original_type == str:
+                return user_input
+            else:
+                # For other types, try to convert to string
+                return user_input
+                
+        except (ValueError, TypeError):
+            # If conversion fails, return the string value and let the module handle it
+            return user_input
+
     def _handle_stop_module(self) -> None:
         """Handle stopping the current module."""
         self.runner_manager.stop_current()
@@ -619,14 +688,24 @@ class RouterSploitGUI:
         Args:
             target: Selected target
         """
-        if self.current_module and "target" in self.current_module.opts:
-            # Find the target option and set its value
-            for i, (opt_name, opt_info) in enumerate(self.current_module.opts.items()):
-                if opt_name == "target" and i < 10:
-                    self.window[f"-OPT_INPUT_{i}-"].update(target)
-                    self._add_console_output(f"🎯 Target set from history: {target}", "info")
-                    break
-                
+        if self.current_module:
+            # Find target-related options and update them
+            for opt_name in self.current_module.opts:
+                if opt_name.lower() in ["target", "rhost", "host"]:
+                    path_key = self.current_module.dotted_path.replace('.', '_')
+                    opt_key = opt_name.replace(' ', '_')
+                    input_key = f"-OPT_INPUT_{path_key}_{opt_key}-"
+                    
+                    # Update the input field if it exists
+                    element = self.window.find_element(input_key, silent_on_error=True)
+                    if element:
+                        element.update(target)
+                        self._add_console_output(f"🎯 Target set from history: {target}", "info")
+                        return
+            
+            # If no target option found, just log
+            self._add_console_output(f"⚠️ No target option found for this module", "warning")
+
     def _handle_help(self) -> None:
         """Show help dialog."""
         help_text = """

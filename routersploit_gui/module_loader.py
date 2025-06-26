@@ -171,6 +171,7 @@ class ModuleLoader:
                     
                     options[opt_name] = {
                         "default": str(opt_value) if opt_value is not None else "",
+                        "original_value": opt_value,  # Store the original value for type inference
                         "description": description,
                         "required": required,
                     }

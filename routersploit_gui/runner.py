@@ -116,7 +116,7 @@ class ModuleRunner(threading.Thread):
                 
     @contextlib.contextmanager
     def _capture_output(self) -> io.StringIO:
-        """Context manager to capture stdout and stderr.
+        """Context manager to capture stdout, stderr, and RouterSploit printer output.
         
         Returns:
             StringIO buffer containing captured output
@@ -129,11 +129,100 @@ class ModuleRunner(threading.Thread):
         try:
             sys.stdout = captured
             sys.stderr = captured
+            
+            # Start monitoring RouterSploit's printer queue
+            self._monitor_routersploit_output()
+            
             yield captured
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
             
+    def _monitor_routersploit_output(self) -> None:
+        """Monitor RouterSploit's printer queue for output in a separate thread."""
+        def monitor_queue():
+            """Monitor the RouterSploit printer queue and capture output."""
+            try:
+                from routersploit.core.exploit.printer import printer_queue
+                import queue as queue_module
+                
+                # Continue monitoring while the runner is active
+                while not self.is_stopped():
+                    try:
+                        # Get print items from RouterSploit's queue (with timeout)
+                        print_item = printer_queue.get(timeout=0.1)
+                        
+                        # Extract the content and format it
+                        content = print_item.content
+                        sep = print_item.sep
+                        end = print_item.end
+                        
+                        # Join the content parts and clean ANSI color codes for GUI display
+                        output_text = sep.join(str(part) for part in content)
+                        clean_text = self._clean_ansi_codes(output_text)
+                        
+                        # Determine the level based on color codes in the original content
+                        level = self._determine_output_level(content)
+                        
+                        # Send to GUI
+                        self._queue_output(clean_text, level)
+                        
+                        # Mark the queue item as done
+                        printer_queue.task_done()
+                        
+                    except queue_module.Empty:
+                        # No items in queue, continue monitoring
+                        continue
+                    except Exception as e:
+                        logger.debug("Error monitoring RouterSploit queue", error=str(e))
+                        break
+                        
+            except ImportError:
+                logger.debug("RouterSploit printer not available")
+            except Exception as e:
+                logger.debug("Error setting up RouterSploit monitoring", error=str(e))
+        
+        # Start the monitoring thread
+        monitor_thread = threading.Thread(target=monitor_queue, daemon=True)
+        monitor_thread.start()
+    
+    def _clean_ansi_codes(self, text: str) -> str:
+        """Remove ANSI color codes from text.
+        
+        Args:
+            text: Text that may contain ANSI codes
+            
+        Returns:
+            Clean text without ANSI codes
+        """
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        return ansi_escape.sub('', text)
+    
+    def _determine_output_level(self, content: tuple) -> str:
+        """Determine output level based on RouterSploit print prefixes.
+        
+        Args:
+            content: Tuple of content parts from RouterSploit
+            
+        Returns:
+            Output level string
+        """
+        if not content:
+            return "info"
+            
+        first_part = str(content[0])
+        if "[+]" in first_part:  # success
+            return "success"
+        elif "[-]" in first_part:  # error
+            return "error"
+        elif "[*]" in first_part:  # status
+            return "info"
+        elif "[!]" in first_part:  # warning
+            return "warning"
+        else:
+            return "info"
+
     def _queue_output(self, line: str, level: str) -> None:
         """Queue an output line for the main thread.
         
