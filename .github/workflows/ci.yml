@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install Poetry
+      run: pip install poetry
+      
+    - name: Install dependencies
+      run: poetry install --with dev
+      
+    - name: Check code formatting
+      run: |
+        poetry run ruff --fix --exit-zero .
+        if ! git diff --quiet; then
+          echo "Code formatting changes detected. Please run 'ruff --fix' locally."
+          exit 1
+        fi
+        
+    - name: Run linting
+      run: poetry run ruff check .
+      
+    - name: Run type checking
+      run: poetry run mypy routersploit_gui/
+      
+    - name: Run tests
+      run: poetry run pytest -q --cov --cov-branch
+      
+    - name: Check test performance
+      run: |
+        START_TIME=$(date +%s)
+        poetry run pytest -q
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+        if [ $DURATION -gt 3 ]; then
+          echo "Tests took ${DURATION}s, which exceeds the 3s limit"
+          exit 1
+        fi 

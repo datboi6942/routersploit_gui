@@ -1,0 +1,72 @@
+[tool.poetry]
+name = "routersploit-gui"
+version = "0.1.0"
+description = "A sleek, kid-proof GUI for RouterSploit"
+authors = ["RouterSploit GUI Team <routersploit-gui@example.com>"]
+readme = "README.md"
+packages = [{include = "routersploit_gui"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+routersploit = "^3.4.0"
+PySimpleGUI = "^4.60.0"
+structlog = "^23.2.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+mypy = "^1.8.0"
+black = "^23.12.0"
+ruff = "^0.1.8"
+hypothesis = "^6.92.0"
+types-PySimpleGUI = "^1.0.0"
+
+[tool.poetry.scripts]
+routersploit-gui = "routersploit_gui.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+select = ["E", "F", "W", "C", "I", "N", "D", "UP", "YTT", "ANN", "S", "BLE", "FBT", "B", "A", "COM", "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FA", "ISC", "ICN", "G", "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SLOT", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "RUF"]
+ignore = ["D100", "D101", "D102", "D103", "D104", "D105", "D106", "D107", "ANN101", "ANN102", "S101"]
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_decorators = false
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["routersploit_gui"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+] 
