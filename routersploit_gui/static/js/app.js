@@ -9,6 +9,12 @@ class RouterSploitGUI {
         this.isRunning = false;
         this.selectedPayload = null;
         
+        // Console state
+        this.consoleConnected = false;
+        this.commandHistory = [];
+        this.historyIndex = -1;
+        this.currentPrompt = 'rsf > ';
+        
         this.init();
     }
     
@@ -22,6 +28,9 @@ class RouterSploitGUI {
         
         // Load modules
         this.loadModules();
+        
+        // Initialize console
+        this.initializeConsole();
     }
     
     setupSocketHandlers() {
@@ -33,6 +42,8 @@ class RouterSploitGUI {
         this.socket.on('disconnect', () => {
             console.log('Disconnected from server');
             this.updateStatus('Disconnected', 'danger');
+            this.updateConsoleStatus('Disconnected', 'danger');
+            this.consoleConnected = false;
         });
         
         this.socket.on('output', (data) => {
@@ -46,6 +57,36 @@ class RouterSploitGUI {
         this.socket.on('status', (data) => {
             this.isRunning = data.running;
             this.updateUI();
+        });
+        
+        // Console event handlers
+        this.socket.on('console_connected', (data) => {
+            console.log('Console connected');
+            this.consoleConnected = true;
+            this.currentPrompt = data.prompt;
+            this.updateConsoleStatus('Connected', 'success');
+            this.updateConsolePrompt(data.prompt);
+            this.addConsoleOutput(data.welcome, 'info');
+            this.enableConsoleInput(true);
+        });
+        
+        this.socket.on('console_output', (data) => {
+            this.addConsoleOutput(data.data, data.level);
+        });
+        
+        this.socket.on('console_prompt', (data) => {
+            this.currentPrompt = data.prompt;
+            this.updateConsolePrompt(data.prompt);
+        });
+        
+        this.socket.on('console_clear', () => {
+            this.clearConsole();
+        });
+        
+        this.socket.on('console_exit', () => {
+            this.addConsoleOutput('Console session ended.', 'warning');
+            this.enableConsoleInput(false);
+            this.updateConsoleStatus('Disconnected', 'secondary');
         });
     }
     
@@ -81,6 +122,227 @@ class RouterSploitGUI {
                 this.applyQuickTarget();
             }
         });
+        
+        // Console event handlers
+        this.setupConsoleEventHandlers();
+        
+        // Tab change handlers
+        document.getElementById('console-tab').addEventListener('shown.bs.tab', () => {
+            this.onConsoleTabShown();
+        });
+    }
+    
+    setupConsoleEventHandlers() {
+        const consoleInput = document.getElementById('consoleInput');
+        const consoleSendBtn = document.getElementById('consoleSendBtn');
+        const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+        
+        // Console input handling
+        consoleInput.addEventListener('keydown', (e) => {
+            this.handleConsoleKeydown(e);
+        });
+        
+        consoleInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.sendConsoleCommand();
+            }
+        });
+        
+        // Send button
+        consoleSendBtn.addEventListener('click', () => {
+            this.sendConsoleCommand();
+        });
+        
+        // Clear console button
+        clearConsoleBtn.addEventListener('click', () => {
+            this.clearConsole();
+        });
+        
+        // Tab completion (basic implementation)
+        consoleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                this.handleTabCompletion();
+            }
+        });
+    }
+    
+    initializeConsole() {
+        this.updateConsoleStatus('Connecting...', 'warning');
+        // Connect to console when the page loads
+        // Wait a bit for the main socket connection to be established
+        setTimeout(() => {
+            if (this.socket && this.socket.connected) {
+                this.connectConsole();
+            }
+        }, 1000);
+    }
+    
+    connectConsole() {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('console_connect');
+        }
+    }
+    
+    onConsoleTabShown() {
+        // When console tab is shown, ensure we're connected
+        if (!this.consoleConnected && this.socket && this.socket.connected) {
+            this.connectConsole();
+        }
+        
+        // Focus the console input
+        const consoleInput = document.getElementById('consoleInput');
+        if (consoleInput && !consoleInput.disabled) {
+            consoleInput.focus();
+        }
+    }
+    
+    sendConsoleCommand() {
+        const consoleInput = document.getElementById('consoleInput');
+        const command = consoleInput.value.trim();
+        
+        if (!command || !this.consoleConnected) {
+            return;
+        }
+        
+        // Add command to history
+        this.commandHistory.push(command);
+        this.historyIndex = this.commandHistory.length;
+        
+        // Display the command in the output
+        this.addConsoleOutput(`${this.currentPrompt}${command}`, 'command');
+        
+        // Clear input
+        consoleInput.value = '';
+        
+        // Send command to server
+        this.socket.emit('console_command', { command: command });
+    }
+    
+    handleConsoleKeydown(e) {
+        const consoleInput = document.getElementById('consoleInput');
+        
+        // Command history navigation
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (this.historyIndex > 0) {
+                this.historyIndex--;
+                consoleInput.value = this.commandHistory[this.historyIndex];
+                // Move cursor to end
+                setTimeout(() => {
+                    consoleInput.setSelectionRange(consoleInput.value.length, consoleInput.value.length);
+                }, 0);
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (this.historyIndex < this.commandHistory.length - 1) {
+                this.historyIndex++;
+                consoleInput.value = this.commandHistory[this.historyIndex];
+                setTimeout(() => {
+                    consoleInput.setSelectionRange(consoleInput.value.length, consoleInput.value.length);
+                }, 0);
+            } else if (this.historyIndex === this.commandHistory.length - 1) {
+                this.historyIndex = this.commandHistory.length;
+                consoleInput.value = '';
+            }
+        }
+    }
+    
+    handleTabCompletion() {
+        const consoleInput = document.getElementById('consoleInput');
+        const currentValue = consoleInput.value;
+        const cursorPos = consoleInput.selectionStart;
+        
+        // Basic tab completion for common commands
+        const commands = ['help', 'show', 'use', 'set', 'unset', 'run', 'exploit', 'back', 'info', 'search', 'sessions', 'session', 'exit', 'clear'];
+        const words = currentValue.substr(0, cursorPos).split(' ');
+        const currentWord = words[words.length - 1];
+        
+        if (words.length === 1) {
+            // Complete command
+            const matches = commands.filter(cmd => cmd.startsWith(currentWord));
+            if (matches.length === 1) {
+                const newValue = currentValue.substring(0, cursorPos - currentWord.length) + matches[0] + currentValue.substring(cursorPos);
+                consoleInput.value = newValue;
+                const newCursorPos = cursorPos - currentWord.length + matches[0].length;
+                consoleInput.setSelectionRange(newCursorPos, newCursorPos);
+            } else if (matches.length > 1) {
+                this.addConsoleOutput(`Available commands: ${matches.join(', ')}`, 'info');
+            }
+        }
+    }
+    
+    addConsoleOutput(text, level = 'info') {
+        const consoleOutput = document.getElementById('consoleOutput');
+        const line = document.createElement('div');
+        line.className = `console-line ${level} new-line`;
+        
+        // Handle special formatting for command lines
+        if (level === 'command') {
+            const parts = text.split('> ');
+            if (parts.length === 2) {
+                line.innerHTML = `<span class="prompt-text">${parts[0]}></span> <span class="command-text">${parts[1]}</span>`;
+            } else {
+                line.textContent = text;
+            }
+        } else {
+            // Convert line breaks and handle ANSI codes if any
+            line.textContent = text;
+        }
+        
+        consoleOutput.appendChild(line);
+        
+        // Remove animation class after animation completes
+        setTimeout(() => {
+            line.classList.remove('new-line');
+        }, 300);
+        
+        // Auto-scroll to bottom
+        consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        
+        // Limit output lines to prevent memory issues (keep last 1000 lines)
+        const lines = consoleOutput.querySelectorAll('.console-line');
+        if (lines.length > 1000) {
+            for (let i = 0; i < lines.length - 1000; i++) {
+                lines[i].remove();
+            }
+        }
+    }
+    
+    clearConsole() {
+        const consoleOutput = document.getElementById('consoleOutput');
+        consoleOutput.innerHTML = '<div class="console-line text-muted">Console cleared</div>';
+    }
+    
+    updateConsoleStatus(text, type) {
+        const statusBadge = document.getElementById('consoleStatus');
+        statusBadge.innerHTML = `<i class="fas fa-circle"></i> ${text}`;
+        statusBadge.className = `badge bg-${type}`;
+        
+        if (type === 'warning') {
+            statusBadge.classList.add('console-connecting');
+        } else {
+            statusBadge.classList.remove('console-connecting');
+        }
+    }
+    
+    updateConsolePrompt(prompt) {
+        const consolePrompt = document.getElementById('consolePrompt');
+        consolePrompt.textContent = prompt;
+    }
+    
+    enableConsoleInput(enabled) {
+        const consoleInput = document.getElementById('consoleInput');
+        const consoleSendBtn = document.getElementById('consoleSendBtn');
+        
+        consoleInput.disabled = !enabled;
+        consoleSendBtn.disabled = !enabled;
+        
+        if (enabled) {
+            consoleInput.placeholder = 'Enter command...';
+        } else {
+            consoleInput.placeholder = 'Console not connected';
+        }
     }
     
     async loadModules() {
@@ -394,8 +656,17 @@ class RouterSploitGUI {
         
         let inputElement = '';
         
-        if (optionType === 'boolean') {
-            const checked = currentValue === true || currentValue === 'True' ? 'checked' : '';
+        // Handle dropdown choices (encoder, output format, etc.)
+        if (optInfo.choices && Array.isArray(optInfo.choices)) {
+            inputElement = `
+                <select class="form-select option-input" id="${inputId}" ${optInfo.required ? 'required' : ''}>
+                    ${optInfo.choices.map(choice => 
+                        `<option value="${choice}" ${choice === currentValue ? 'selected' : ''}>${choice || '(none)'}</option>`
+                    ).join('')}
+                </select>
+            `;
+        } else if (optionType === 'boolean') {
+            const checked = currentValue === true || currentValue === 'True' || currentValue === 'true' ? 'checked' : '';
             inputElement = `
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="${inputId}" ${checked}>
@@ -405,21 +676,36 @@ class RouterSploitGUI {
                 </div>
             `;
         } else if (optionType === 'port' || optionType === 'integer') {
+            const minValue = optInfo.min_value ? `min="${optInfo.min_value}"` : '';
+            const maxValue = optInfo.max_value ? `max="${optInfo.max_value}"` : '';
             inputElement = `
                 <input type="number" class="form-control option-input" id="${inputId}" 
                        value="${currentValue}" placeholder="${optInfo.description || ''}"
-                       ${optInfo.required ? 'required' : ''}>
+                       ${minValue} ${maxValue} ${optInfo.required ? 'required' : ''}>
+            `;
+        } else if (optionType === 'file') {
+            inputElement = `
+                <div class="input-group">
+                    <input type="text" class="form-control option-input" id="${inputId}" 
+                           value="${currentValue}" placeholder="${optInfo.description || 'Enter file path'}"
+                           ${optInfo.required ? 'required' : ''}>
+                    <button class="btn btn-outline-secondary" type="button" onclick="this.previousElementSibling.click()">
+                        <i class="fas fa-folder-open"></i>
+                    </button>
+                </div>
             `;
         } else {
             // Text input (default)
+            const placeholder = optInfo.type_hint === 'hostname' ? 'Enter hostname or IP address' : 
+                               (optInfo.description || '');
             inputElement = `
                 <input type="text" class="form-control option-input" id="${inputId}" 
-                       value="${currentValue}" placeholder="${optInfo.description || ''}"
+                       value="${currentValue}" placeholder="${placeholder}"
                        ${optInfo.required ? 'required' : ''}>
             `;
         }
         
-        const typeBadge = this.getTypeBadge(optionType);
+        const typeBadge = this.getTypeBadge(optionType, optInfo.choices);
         
         div.innerHTML = `
             <div class="option-label ${optInfo.required ? 'required' : ''}">
@@ -433,14 +719,21 @@ class RouterSploitGUI {
         return div;
     }
     
-    getTypeBadge(optionType) {
+    getTypeBadge(optionType, choices) {
         const badges = {
             'text': '<span class="badge bg-info option-type-badge">TEXT</span>',
             'port': '<span class="badge bg-warning option-type-badge">PORT</span>',
             'integer': '<span class="badge bg-warning option-type-badge">INT</span>',
             'boolean': '<span class="badge bg-success option-type-badge">BOOL</span>',
-            'file': '<span class="badge bg-secondary option-type-badge">FILE</span>'
+            'file': '<span class="badge bg-secondary option-type-badge">FILE</span>',
+            'choice': '<span class="badge bg-primary option-type-badge">CHOICE</span>'
         };
+        
+        // If choices are available, show choice badge
+        if (choices && Array.isArray(choices) && choices.length > 0) {
+            return badges['choice'] || '';
+        }
+        
         return badges[optionType] || '';
     }
     

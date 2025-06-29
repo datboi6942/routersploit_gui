@@ -147,15 +147,29 @@ class ModuleLoader:
             # Extract options using RouterSploit's option system
             options = self._extract_module_options(instance)
             
-            # Generate name and description
-            class_name = cls.__name__
-            name = class_name.replace("_", " ").title()
+            # Generate name based on module path for better uniqueness
+            # Clean up the dotted path (remove routersploit.modules prefix)
+            clean_path = dotted_path.replace("routersploit.modules.", "")
+            
+            # For payloads, use the module path to create a descriptive name
+            if category == "payloads":
+                # Extract meaningful name from the path
+                # e.g., "payloads.armle.bind_tcp" -> "ARM LE Bind TCP"
+                path_parts = clean_path.split(".")
+                if len(path_parts) >= 3:  # payloads.arch.name
+                    arch = path_parts[1].upper()  # armle -> ARMLE
+                    payload_name = path_parts[2].replace("_", " ").title()  # bind_tcp -> Bind Tcp
+                    name = f"{arch} {payload_name}"
+                else:
+                    # Fallback to path-based name
+                    name = clean_path.split(".")[-1].replace("_", " ").title()
+            else:
+                # For other modules, use class name as before
+                class_name = cls.__name__
+                name = class_name.replace("_", " ").title()
             
             # Try multiple ways to get a meaningful description
             description = self._extract_description(instance, cls, name)
-            
-            # Clean up the dotted path (remove routersploit.modules prefix)
-            clean_path = dotted_path.replace("routersploit.modules.", "")
             
             return ModuleMeta(
                 dotted_path=clean_path,
@@ -257,16 +271,19 @@ class ModuleLoader:
             # Get description
             description = self._get_option_description(opt_name, instance)
             
-            # Determine the option type and constraints
-            option_type = self._determine_option_type_from_value(current_value)
+            # Extract constraints and option type
             constraints = self._extract_option_constraints(opt_name, instance, current_value)
+            
+            # Use constraint option_type if available, otherwise determine from value
+            option_type = constraints.get("option_type") or self._determine_option_type_from_value(current_value)
             
             option_info = {
                 "default": current_value,
                 "original_value": current_value,
+                "current_value": current_value,
                 "description": description,
                 "required": required,
-                "type": option_type,
+                "option_type": option_type,
                 **constraints  # Add any additional constraints (choices, min/max, etc.)
             }
             
@@ -325,28 +342,82 @@ class ModuleLoader:
                 except Exception:
                     pass
             
+            # Special handling for encoder options
+            if opt_name.lower() == "encoder" and hasattr(instance, '__module__'):
+                encoder_choices = self._get_encoder_choices()
+                if encoder_choices:
+                    constraints["choices"] = encoder_choices
+                    constraints["type_hint"] = "choice"
+            
+            # Special handling for output format options
+            if opt_name.lower() == "output" and hasattr(instance, '__module__'):
+                if "payload" in str(instance.__module__):
+                    output_choices = ["python", "perl", "bash", "raw", "c", "javascript"]
+                    constraints["choices"] = output_choices
+                    constraints["type_hint"] = "choice"
+            
+            # Check for boolean options by current value or name pattern
+            if isinstance(current_value, bool) or any(term in opt_name.lower() for term in ["enable", "disable", "ssl", "https", "verify", "use"]):
+                constraints["option_type"] = "boolean"
+            
             # Check for port-related options
-            if "port" in opt_name.lower() and isinstance(current_value, int):
+            elif "port" in opt_name.lower() and (isinstance(current_value, int) or str(current_value).isdigit()):
                 constraints["min_value"] = 1
                 constraints["max_value"] = 65535
-                constraints["type_hint"] = "port"
+                constraints["option_type"] = "port"
             
             # Check for file/path options
-            if any(term in opt_name.lower() for term in ["file", "path", "cert", "key"]):
-                constraints["type_hint"] = "file"
+            elif any(term in opt_name.lower() for term in ["file", "path", "cert", "key"]):
+                constraints["option_type"] = "file"
             
-            # Check for boolean options by name pattern
-            if any(term in opt_name.lower() for term in ["enable", "disable", "ssl", "https", "verify"]):
-                constraints["type_hint"] = "boolean"
-                
             # Check for IP/hostname options
-            if any(term in opt_name.lower() for term in ["host", "target", "ip", "rhost", "lhost"]):
+            elif any(term in opt_name.lower() for term in ["host", "target", "ip", "rhost", "lhost"]):
+                constraints["option_type"] = "text"
                 constraints["type_hint"] = "hostname"
+            
+            # Check for numeric options
+            elif isinstance(current_value, int) or (isinstance(current_value, str) and current_value.isdigit()):
+                constraints["option_type"] = "integer"
                 
         except Exception as e:
             logger.debug("Error extracting constraints", option=opt_name, error=str(e))
         
         return constraints
+    
+    def _get_encoder_choices(self) -> List[str]:
+        """Get available encoder choices for payloads.
+        
+        Returns:
+            List of available encoder names
+        """
+        try:
+            # Try to import RouterSploit encoders
+            import routersploit.modules.encoders
+            import pkgutil
+            
+            encoders = [""]  # Start with empty option (no encoder)
+            
+            # Walk through encoder modules
+            for importer, modname, ispkg in pkgutil.walk_packages(
+                routersploit.modules.encoders.__path__, 
+                prefix="routersploit.modules.encoders."
+            ):
+                if not ispkg:
+                    try:
+                        # Extract encoder name from module path
+                        encoder_name = modname.split(".")[-1]
+                        if not encoder_name.startswith("_"):
+                            encoders.append(encoder_name)
+                    except Exception:
+                        continue
+            
+            # Remove duplicates and sort
+            unique_encoders = list(dict.fromkeys(encoders))  # Preserves order
+            return sorted(unique_encoders)
+        except Exception as e:
+            logger.debug("Failed to get encoder choices", error=str(e))
+            # Return common encoder choices as fallback (without duplicates)
+            return ["", "base64", "hex", "url", "none"]
     
     def _enhance_option_metadata(self, opt_name: str, opt_info: Dict[str, Any], instance: Any) -> None:
         """Enhance option metadata with additional information.

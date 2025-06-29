@@ -99,21 +99,113 @@ class ModuleRunner(threading.Thread):
         Args:
             module_instance: The instantiated module
         """
+        print(f"[DEBUG] Starting _configure_module with {len(self.options)} options")
+        print(f"[DEBUG] Options: {self.options}")
+        
         for option_name, option_value in self.options.items():
             if hasattr(module_instance, option_name):
-                setattr(module_instance, option_name, option_value)
-                logger.debug(
-                    "Set module option",
-                    option=option_name,
-                    value=option_value,
-                )
-            else:
-                logger.warning(
-                    "Unknown module option",
-                    option=option_name,
-                    module=self.module_meta.dotted_path,
-                )
+                # Get the original/default value from the module to determine expected type
+                original_value = getattr(module_instance, option_name)
                 
+                print(f"[DEBUG] Processing option '{option_name}': value={option_value} (type: {type(option_value)}) original={original_value} (type: {type(original_value)})")
+                
+                # Convert the option value to the correct type
+                converted_value = self._convert_option_type(option_value, original_value)
+                
+                print(f"[DEBUG] Converted '{option_name}' from {option_value} ({type(option_value)}) to {converted_value} ({type(converted_value)})")
+                
+                # Attempt to set the option with detailed error handling
+                try:
+                    print(f"[DEBUG] About to set {option_name} = {converted_value}")
+                    setattr(module_instance, option_name, converted_value)
+                    print(f"[DEBUG] Successfully set {option_name} = {converted_value}")
+                except Exception as e:
+                    error_msg = f"FAILED to set option '{option_name}': input_value={option_value} ({type(option_value)}), converted_value={converted_value} ({type(converted_value)}), original_value={original_value} ({type(original_value)}), error={str(e)}"
+                    print(f"[ERROR] {error_msg}")
+                    logger.error(error_msg)
+                    # Print to stderr as well to ensure visibility
+                    print(error_msg, file=sys.stderr)
+                    raise RuntimeError(f"Failed to configure module option '{option_name}': {str(e)}") from e
+            else:
+                print(f"[DEBUG] Skipping option '{option_name}' - not found on module")
+                logger.debug(f"Option '{option_name}' not found on module instance")
+                
+    def _convert_option_type(self, value: Any, original_value: Any) -> Any:
+        """Convert option value to the correct type based on the original value.
+        
+        Args:
+            value: The value to convert
+            original_value: The original value from the module to determine type
+            
+        Returns:
+            Converted value with correct type
+        """
+        print(f"[DEBUG] _convert_option_type: value={value} ({type(value)}) original_value={original_value} ({type(original_value)})")
+        
+        # If value is None, return original
+        if value is None:
+            print(f"[DEBUG] Value is None, returning original: {original_value}")
+            return original_value
+            
+        # If original value is None, return as string
+        if original_value is None:
+            result = str(value) if value != "" else ""
+            print(f"[DEBUG] Original is None, returning as string: {result}")
+            return result
+            
+        # Handle boolean conversion (RouterSploit expects string representations)
+        if isinstance(original_value, bool):
+            print(f"[DEBUG] Original is boolean, converting value: {value}")
+            if isinstance(value, bool):
+                # Convert Python boolean to string that RouterSploit expects
+                result = "true" if value else "false"
+                print(f"[DEBUG] Converted Python boolean {value} to string '{result}'")
+                return result
+            elif isinstance(value, str):
+                # Convert string to RouterSploit boolean format
+                if value.lower() in ('true', '1', 'yes', 'on'):
+                    result = "true"
+                elif value.lower() in ('false', '0', 'no', 'off'):
+                    result = "false"
+                else:
+                    print(f"[DEBUG] Unknown boolean string value: {value}")
+                    result = "true" if original_value else "false"
+                print(f"[DEBUG] Converted string '{value}' to RouterSploit boolean '{result}'")
+                return result
+            elif isinstance(value, (int, float)):
+                result = "true" if value else "false"
+                print(f"[DEBUG] Converted numeric {value} to RouterSploit boolean '{result}'")
+                return result
+            else:
+                result = "true" if original_value else "false"
+                print(f"[DEBUG] Unknown boolean type {type(value)}, using default '{result}'")
+                return result
+                
+        # Handle integer values
+        if isinstance(original_value, int):
+            try:
+                result = int(value)
+                print(f"[DEBUG] Converted to integer: {result}")
+                return result
+            except (ValueError, TypeError):
+                print(f"[DEBUG] Cannot convert to integer, returning as string: {value}")
+                return str(value)
+                
+        # Handle float values
+        if isinstance(original_value, float):
+            try:
+                result = float(value)
+                print(f"[DEBUG] Converted to float: {result}")
+                return result
+            except (ValueError, TypeError):
+                print(f"[DEBUG] Cannot convert to float, returning as string: {value}")
+                return str(value)
+                
+        # Default: return as string
+        result = str(value)
+        print(f"[DEBUG] Default conversion to string: {result}")
+        return result
+        
     @contextlib.contextmanager
     def _capture_output(self) -> io.StringIO:
         """Context manager to capture stdout, stderr, and RouterSploit printer output.

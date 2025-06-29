@@ -11,6 +11,7 @@ import structlog
 from . import config
 from .module_loader import ModuleLoader, ModuleMeta
 from .runner import RunnerManager
+from .console import ConsoleHandler
 
 logger = structlog.get_logger(__name__)
 
@@ -20,6 +21,7 @@ class RouterSploitWebGUI:
     
     Provides a modern web interface for discovering, configuring,
     and executing RouterSploit modules with real-time output.
+    Also includes a console interface for complete RouterSploit functionality.
     """
     
     def __init__(self, host: str = "127.0.0.1", port: int = 5000) -> None:
@@ -44,6 +46,7 @@ class RouterSploitWebGUI:
         # Initialize backend components
         self.module_loader = ModuleLoader()
         self.runner_manager = RunnerManager()
+        self.console_handler = ConsoleHandler(self.module_loader)
         
         # Application state
         self.modules: List[ModuleMeta] = []
@@ -51,9 +54,15 @@ class RouterSploitWebGUI:
         self.current_module: Optional[ModuleMeta] = None
         self.target_history: List[str] = []
         
+        # Console clients tracking
+        self.console_clients: Dict[str, bool] = {}  # session_id -> is_active
+        
         # Setup routes and socket handlers
         self._setup_routes()
         self._setup_socket_handlers()
+        
+        # Setup console output callback
+        self.console_handler.set_output_callback(self._on_console_output)
         
         # Load modules
         self._load_modules()
@@ -86,7 +95,7 @@ class RouterSploitWebGUI:
             # Get available payloads if this is an exploit module
             payloads = []
             if self._is_exploit_module(module):
-                payloads = self._get_available_payloads()
+                payloads = self._get_compatible_payloads(module)
             
             # Serialize the module options
             json_options = self._serialize_options(module.opts)
@@ -117,21 +126,35 @@ class RouterSploitWebGUI:
             module = self._find_module_by_path(module_path)
             if not module:
                 return jsonify({'error': 'Module not found'}), 404
+
+            logger.info("Processing module options", module=module_path, options=options)
             
             # Validate and convert options
             processed_options = self._process_options(options, module.opts)
+            
+            logger.info("Processed module options", processed_options=processed_options)
             
             # Add payload options if specified
             if payload_path:
                 payload = self._find_module_by_path(payload_path)
                 if payload:
+                    logger.info("Processing payload options", payload=payload_path, payload_options=payload_options)
                     processed_payload_options = self._process_options(payload_options, payload.opts)
+                    logger.info("Processed payload options", processed_payload_options=processed_payload_options)
+                    
                     # Set the payload on the module
                     processed_options['payload'] = payload.cls()
-                    # Configure payload options
+                    
+                    # Configure payload options with detailed error handling
                     for opt_name, opt_value in processed_payload_options.items():
                         if hasattr(processed_options['payload'], opt_name):
-                            setattr(processed_options['payload'], opt_name, opt_value)
+                            try:
+                                logger.info("Setting payload option", option=opt_name, value=opt_value, value_type=type(opt_value).__name__)
+                                setattr(processed_options['payload'], opt_name, opt_value)
+                                logger.info("Successfully set payload option", option=opt_name)
+                            except Exception as e:
+                                logger.error("Failed to set payload option", option=opt_name, value=opt_value, value_type=type(opt_value).__name__, error=str(e))
+                                return jsonify({'error': f'Failed to set payload option {opt_name}: {str(e)}'}), 400
             
             # Start execution
             success = self.runner_manager.start_module(
@@ -177,6 +200,73 @@ class RouterSploitWebGUI:
         def handle_disconnect() -> None:
             """Handle client disconnection."""
             logger.info("Client disconnected")
+            
+        @self.socketio.on('console_connect')
+        def handle_console_connect() -> None:
+            """Handle console connection."""
+            session_id = request.sid
+            self.console_clients[session_id] = True
+            logger.info("Console client connected", session_id=session_id)
+            emit('console_connected', {
+                'prompt': self.console_handler.get_prompt(),
+                'welcome': 'RouterSploit Console - Type "help" for commands'
+            })
+            
+        @self.socketio.on('console_disconnect')
+        def handle_console_disconnect() -> None:
+            """Handle console disconnection."""
+            session_id = request.sid
+            if session_id in self.console_clients:
+                del self.console_clients[session_id]
+            logger.info("Console client disconnected", session_id=session_id)
+            
+        @self.socketio.on('console_command')
+        def handle_console_command(data: Dict[str, Any]) -> None:
+            """Handle console command execution."""
+            try:
+                command = data.get('command', '').strip()
+                if not command:
+                    return
+                    
+                logger.info("Executing console command", command=command)
+                
+                # Execute the command
+                result = self.console_handler.execute_command(command)
+                
+                # Handle special commands
+                if result == "CLEAR_CONSOLE":
+                    emit('console_clear')
+                    return
+                elif result == "EXIT_CONSOLE":
+                    emit('console_exit')
+                    return
+                
+                # Send result back to client
+                if result:
+                    emit('console_output', {
+                        'data': result,
+                        'level': 'info'
+                    })
+                
+                # Send updated prompt
+                emit('console_prompt', {
+                    'prompt': self.console_handler.get_prompt()
+                })
+                
+            except Exception as e:
+                logger.error("Console command failed", error=str(e))
+                emit('console_output', {
+                    'data': f"Error: {str(e)}",
+                    'level': 'error'
+                })
+    
+    def _on_console_output(self, message: str, level: str) -> None:
+        """Handle console output from the console handler."""
+        # Broadcast to all connected console clients
+        self.socketio.emit('console_output', {
+            'data': message,
+            'level': level
+        }, room=None)  # Broadcast to all clients
     
     def _load_modules(self) -> None:
         """Load all RouterSploit modules."""
@@ -203,6 +293,75 @@ class RouterSploitWebGUI:
     def _get_available_payloads(self) -> List[ModuleMeta]:
         """Get all available payload modules."""
         return [module for module in self.modules if module.category == "payloads"]
+    
+    def _get_compatible_payloads(self, exploit_module: ModuleMeta) -> List[ModuleMeta]:
+        """Get payloads compatible with the given exploit module.
+        
+        Args:
+            exploit_module: The exploit module to find compatible payloads for
+            
+        Returns:
+            List of compatible payload modules
+        """
+        all_payloads = self._get_available_payloads()
+        
+        # For now, filter based on common patterns and payload types
+        # This can be enhanced with more sophisticated compatibility logic
+        
+        compatible_payloads = []
+        exploit_path = exploit_module.dotted_path.lower()
+        
+        for payload in all_payloads:
+            payload_path = payload.dotted_path.lower()
+            
+            # Include all generic payloads (cmd, generic)
+            if any(term in payload_path for term in ["cmd.", "generic"]):
+                compatible_payloads.append(payload)
+                continue
+            
+            # Architecture-specific filtering
+            # If exploit targets specific architecture, prefer matching payloads
+            arch_hints = {
+                "arm": ["arm", "armle", "armbe"],
+                "mips": ["mips", "mipsle", "mipsbe"], 
+                "x86": ["x86", "x64"],
+                "sparc": ["sparc"],
+                "ppc": ["ppc", "powerpc"]
+            }
+            
+            # Check if exploit hints at specific architecture
+            exploit_arch = None
+            for arch, variants in arch_hints.items():
+                if any(variant in exploit_path for variant in variants):
+                    exploit_arch = arch
+                    break
+            
+            # If we found architecture hints, prefer matching payloads
+            if exploit_arch:
+                arch_variants = arch_hints[exploit_arch]
+                if any(variant in payload_path for variant in arch_variants):
+                    compatible_payloads.append(payload)
+                # Also include generic payloads for arch-specific exploits
+                elif any(term in payload_path for term in ["generic", "cmd"]):
+                    compatible_payloads.append(payload)
+            else:
+                # No specific architecture detected, include most payloads except very specific ones
+                # Exclude architecture-specific payloads when no arch hints
+                if not any(arch_var in payload_path for arch_vars in arch_hints.values() for arch_var in arch_vars):
+                    compatible_payloads.append(payload)
+                # But always include cmd payloads as they're usually universal
+                elif "cmd." in payload_path:
+                    compatible_payloads.append(payload)
+        
+        # Remove duplicates and sort by name
+        seen = set()
+        unique_payloads = []
+        for payload in compatible_payloads:
+            if payload.dotted_path not in seen:
+                seen.add(payload.dotted_path)
+                unique_payloads.append(payload)
+        
+        return sorted(unique_payloads, key=lambda p: p.name)
     
     def _serialize_tree(self, tree: Dict[str, Any]) -> Dict[str, Any]:
         """Convert the module tree to a JSON-serializable format.
@@ -295,23 +454,31 @@ class RouterSploitWebGUI:
         """
         processed = {}
         
+        logger.info("Processing options", raw_options=options, spec_count=len(option_specs))
+        
         for opt_name, opt_value in options.items():
             if opt_name in option_specs:
                 spec = option_specs[opt_name]
                 original_value = spec.get('current_value')
                 
+                logger.info("Processing option", option=opt_name, input_value=opt_value, input_type=type(opt_value).__name__, original_value=original_value, original_type=type(original_value).__name__)
+                
                 # Convert the value to the appropriate type
                 try:
                     converted_value = self._convert_option_value(opt_value, original_value)
                     processed[opt_name] = converted_value
+                    logger.info("Successfully converted option", option=opt_name, converted_value=converted_value, converted_type=type(converted_value).__name__)
                 except (ValueError, TypeError) as e:
                     logger.warning("Invalid option value", option=opt_name, value=opt_value, error=str(e))
                     # Use default value if conversion fails
                     processed[opt_name] = original_value
+                    logger.info("Using default value for option", option=opt_name, default_value=original_value)
             else:
                 # Unknown option, pass through as-is
+                logger.warning("Unknown option, passing through", option=opt_name, value=opt_value)
                 processed[opt_name] = opt_value
         
+        logger.info("Finished processing options", processed_options=processed)
         return processed
     
     def _convert_option_value(self, user_input: Any, original_value: Any) -> Any:
@@ -324,29 +491,49 @@ class RouterSploitWebGUI:
         Returns:
             Converted value with appropriate type
         """
+        logger.debug("Converting option value", user_input=user_input, user_input_type=type(user_input).__name__, original_value=original_value, original_type=type(original_value).__name__)
+        
         if user_input == "" or user_input is None:
+            logger.debug("Input is empty or None, returning original", result=original_value)
             return original_value
         
         # If original value is None, return the input as string
         if original_value is None:
-            return str(user_input)
+            result = str(user_input)
+            logger.debug("Original is None, converting to string", result=result)
+            return result
         
         # Convert based on the type of the original value
         if isinstance(original_value, bool):
+            logger.debug("Converting to boolean", user_input=user_input, user_input_type=type(user_input).__name__)
+            
             if isinstance(user_input, bool):
+                logger.debug("Input is already boolean", result=user_input)
                 return user_input
+                
             if isinstance(user_input, str):
-                return user_input.lower() in ('true', '1', 'yes', 'on')
-            return bool(user_input)
+                result = user_input.lower() in ('true', '1', 'yes', 'on')
+                logger.debug("Converting string to boolean", string_input=user_input, lower_input=user_input.lower(), result=result)
+                return result
+                
+            result = bool(user_input)
+            logger.debug("Converting other type to boolean", input_value=user_input, result=result)
+            return result
         
         if isinstance(original_value, int):
-            return int(user_input)
+            result = int(user_input)
+            logger.debug("Converting to int", user_input=user_input, result=result)
+            return result
         
         if isinstance(original_value, float):
-            return float(user_input)
+            result = float(user_input)
+            logger.debug("Converting to float", user_input=user_input, result=result)
+            return result
         
         # Default to string
-        return str(user_input)
+        result = str(user_input)
+        logger.debug("Converting to string (default)", user_input=user_input, result=result)
+        return result
     
     def _on_module_output(self, line: str, level: str) -> None:
         """Handle output from running module."""
@@ -386,6 +573,7 @@ class RouterSploitWebGUI:
     def cleanup(self) -> None:
         """Cleanup resources."""
         self.runner_manager.cleanup()
+        self.console_handler.cleanup()
 
 
 def create_app() -> Flask:

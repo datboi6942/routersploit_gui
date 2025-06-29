@@ -27,104 +27,179 @@
             </div>
         </nav>
 
+        <!-- Main Content with Tabs -->
         <div class="row h-100">
-            <!-- Module Tree (Left Panel) -->
-            <div class="col-md-4 h-100">
-                <div class="card h-100">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-sitemap"></i> Modules
-                            <span id="moduleCount" class="badge bg-primary ms-2">Loading...</span>
-                        </h5>
-                    </div>
-                    <div class="card-body p-0" style="overflow-y: auto;">
-                        <div id="moduleTree" class="tree">
-                            <div class="text-center p-3">
-                                <div class="spinner-border" role="status">
-                                    <span class="visually-hidden">Loading...</span>
-                                </div>
-                                <p class="mt-2">Loading modules...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Module Details and Options (Middle Panel) -->
-            <div class="col-md-5 h-100">
-                <div class="card h-100">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-cog"></i> Configuration
-                        </h5>
-                    </div>
-                    <div class="card-body" style="overflow-y: auto;">
-                        <!-- Module Info -->
-                        <div id="moduleInfo" class="d-none">
-                            <div class="mb-3">
-                                <h6 id="moduleName" class="text-primary"></h6>
-                                <small id="modulePath" class="text-muted"></small>
-                                <p id="moduleDescription" class="mt-2"></p>
-                            </div>
-                            
-                            <!-- Quick Target Setup -->
-                            <div class="mb-3">
-                                <label class="form-label">Quick Target:</label>
-                                <div class="input-group">
-                                    <input type="text" id="quickTarget" class="form-control" placeholder="e.g., 192.168.1.1">
-                                    <button id="applyTargetBtn" class="btn btn-outline-secondary" type="button">
-                                        <i class="fas fa-bullseye"></i> Apply
-                                    </button>
-                                </div>
-                            </div>
-
-                            <!-- Module Options -->
-                            <div id="moduleOptionsSection">
-                                <h6>Module Options:</h6>
-                                <div id="moduleOptions"></div>
-                            </div>
-
-                            <!-- Payload Options (for exploits) -->
-                            <div id="payloadSection" class="d-none">
-                                <hr>
-                                <h6>Payload:</h6>
-                                <select id="payloadSelect" class="form-select mb-3">
-                                    <option value="">Select a payload...</option>
-                                </select>
-                                <div id="payloadOptions"></div>
-                            </div>
-
-                            <!-- Run Button -->
-                            <div class="d-grid gap-2 mt-3">
-                                <button id="runBtn" class="btn btn-success" disabled>
-                                    <i class="fas fa-play"></i> Run Module
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Default Message -->
-                        <div id="noModuleSelected" class="text-center text-muted">
-                            <i class="fas fa-arrow-left fa-2x mb-3"></i>
-                            <p>Select a module from the tree to configure its options</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Output (Right Panel) -->
-            <div class="col-md-3 h-100">
-                <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">
-                            <i class="fas fa-terminal"></i> Output
-                        </h5>
-                        <button id="clearOutputBtn" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-trash"></i> Clear
+            <!-- Navigation Tabs -->
+            <div class="col-12 mb-3">
+                <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="gui-tab" data-bs-toggle="tab" data-bs-target="#gui-panel" type="button" role="tab">
+                            <i class="fas fa-desktop"></i> GUI Interface
                         </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="console-tab" data-bs-toggle="tab" data-bs-target="#console-panel" type="button" role="tab">
+                            <i class="fas fa-terminal"></i> Console
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="col-12">
+                <div class="tab-content h-100" id="mainTabsContent">
+                    <!-- GUI Interface Tab -->
+                    <div class="tab-pane fade show active h-100" id="gui-panel" role="tabpanel">
+                        <div class="row h-100">
+                            <!-- Module Tree (Left Panel) -->
+                            <div class="col-md-4 h-100">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-sitemap"></i> Modules
+                                            <span id="moduleCount" class="badge bg-primary ms-2">Loading...</span>
+                                        </h5>
+                                    </div>
+                                    <div class="card-body p-0" style="overflow-y: auto;">
+                                        <div id="moduleTree" class="tree">
+                                            <div class="text-center p-3">
+                                                <div class="spinner-border" role="status">
+                                                    <span class="visually-hidden">Loading...</span>
+                                                </div>
+                                                <p class="mt-2">Loading modules...</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Module Details and Options (Middle Panel) -->
+                            <div class="col-md-5 h-100">
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-cog"></i> Configuration
+                                        </h5>
+                                    </div>
+                                    <div class="card-body" style="overflow-y: auto;">
+                                        <!-- Module Info -->
+                                        <div id="moduleInfo" class="d-none">
+                                            <div class="mb-3">
+                                                <h6 id="moduleName" class="text-primary"></h6>
+                                                <small id="modulePath" class="text-muted"></small>
+                                                <p id="moduleDescription" class="mt-2"></p>
+                                            </div>
+                                            
+                                            <!-- Quick Target Setup -->
+                                            <div class="mb-3">
+                                                <label class="form-label">Quick Target:</label>
+                                                <div class="input-group">
+                                                    <input type="text" id="quickTarget" class="form-control" placeholder="e.g., 192.168.1.1">
+                                                    <button id="applyTargetBtn" class="btn btn-outline-secondary" type="button">
+                                                        <i class="fas fa-bullseye"></i> Apply
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <!-- Module Options -->
+                                            <div id="moduleOptionsSection">
+                                                <h6>Module Options:</h6>
+                                                <div id="moduleOptions"></div>
+                                            </div>
+
+                                            <!-- Payload Options (for exploits) -->
+                                            <div id="payloadSection" class="d-none">
+                                                <hr>
+                                                <h6>Payload:</h6>
+                                                <select id="payloadSelect" class="form-select mb-3">
+                                                    <option value="">Select a payload...</option>
+                                                </select>
+                                                <div id="payloadOptions"></div>
+                                            </div>
+
+                                            <!-- Run Button -->
+                                            <div class="d-grid gap-2 mt-3">
+                                                <button id="runBtn" class="btn btn-success" disabled>
+                                                    <i class="fas fa-play"></i> Run Module
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Default Message -->
+                                        <div id="noModuleSelected" class="text-center text-muted">
+                                            <i class="fas fa-arrow-left fa-2x mb-3"></i>
+                                            <p>Select a module from the tree to configure its options</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Output (Right Panel) -->
+                            <div class="col-md-3 h-100">
+                                <div class="card h-100">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-terminal"></i> Output
+                                        </h5>
+                                        <button id="clearOutputBtn" class="btn btn-sm btn-outline-secondary">
+                                            <i class="fas fa-trash"></i> Clear
+                                        </button>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <div id="outputContainer" class="output-container">
+                                            <div class="output-line text-muted">Ready to execute modules...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body p-0">
-                        <div id="outputContainer" class="output-container">
-                            <div class="output-line text-muted">Ready to execute modules...</div>
+
+                    <!-- Console Tab -->
+                    <div class="tab-pane fade h-100" id="console-panel" role="tabpanel">
+                        <div class="row h-100">
+                            <div class="col-12 h-100">
+                                <div class="card h-100">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h5 class="mb-0">
+                                            <i class="fas fa-terminal"></i> RouterSploit Console
+                                        </h5>
+                                        <div>
+                                            <button id="clearConsoleBtn" class="btn btn-sm btn-outline-secondary me-2">
+                                                <i class="fas fa-trash"></i> Clear
+                                            </button>
+                                            <span id="consoleStatus" class="badge bg-secondary">
+                                                <i class="fas fa-circle"></i> Disconnected
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="card-body p-0 d-flex flex-column">
+                                        <!-- Console Output -->
+                                        <div id="consoleOutput" class="console-output flex-grow-1 p-3">
+                                            <div class="console-line text-muted">
+                                                <span class="text-info">RouterSploit Console</span><br>
+                                                <span class="text-muted">Initializing...</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Console Input -->
+                                        <div class="console-input-area border-top p-3">
+                                            <div class="input-group">
+                                                <span id="consolePrompt" class="input-group-text bg-dark text-light font-monospace">rsf &gt;</span>
+                                                <input type="text" id="consoleInput" class="form-control font-monospace" 
+                                                       placeholder="Enter command..." autocomplete="off" disabled>
+                                                <button id="consoleSendBtn" class="btn btn-primary" disabled>
+                                                    <i class="fas fa-paper-plane"></i>
+                                                </button>
+                                            </div>
+                                            <small class="text-muted mt-1 d-block">
+                                                <i class="fas fa-info-circle"></i> 
+                                                Use "help" for available commands. Press Tab for completion, Up/Down for history.
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

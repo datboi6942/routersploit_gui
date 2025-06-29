@@ -1,11 +1,16 @@
 """Configuration settings for RouterSploit GUI."""
 
+import os
 from pathlib import Path
 from typing import Final
 
 # Application settings
 APP_NAME: Final[str] = "RouterSploit GUI"
 APP_VERSION: Final[str] = "0.1.0"
+
+# Environment and logging
+ENVIRONMENT: Final[str] = os.getenv("RSF_GUI_ENV", "production")
+LOG_LEVEL: Final[int] = 10  # DEBUG level for troubleshooting
 
 # GUI settings
 WINDOW_SIZE: Final[tuple[int, int]] = (1200, 800)
