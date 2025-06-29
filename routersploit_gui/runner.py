@@ -314,9 +314,9 @@ class RunnerManager:
         # Clean up finished runners
         self._runners = [r for r in self._runners if r.is_alive()]
         
-        # Check if current runner has finished
+        # Check if current runner has finished and clear it (no excessive logging)
         if self._current_runner and not self._current_runner.is_alive():
-            logger.debug("Current runner has finished")
+            self._current_runner = None
         
     def cleanup(self) -> None:
         """Clean up all runners."""

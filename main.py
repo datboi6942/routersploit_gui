@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""3-liner stub to launch RouterSploit GUI."""
+"""Main entry point for RouterSploit GUI."""
 
-from routersploit_gui.main import main_entry
+from routersploit_gui.main import main
 
 if __name__ == "__main__":
-    main_entry() 
+    main() 

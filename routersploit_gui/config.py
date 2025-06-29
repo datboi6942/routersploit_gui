@@ -28,6 +28,38 @@ RSF_MODULE_PATTERNS: Final[list[str]] = [
 
 # Styling
 THEME: Final[str] = "DarkBlue3"
+
+# Available themes for customization
+AVAILABLE_THEMES: Final[list[str]] = [
+    "DarkBlue3",
+    "DarkGrey",
+    "Dark",
+    "DarkAmber",
+    "DarkBrown",
+    "DarkGreen",
+    "DarkPurple",
+    "DarkRed",
+    "DarkTeal",
+    "LightBlue",
+    "LightGreen",
+    "LightGrey",
+    "Default1",
+    "DefaultNoMoreNagging",
+    "Material1",
+    "Material2",
+    "Reddit",
+    "Topanga",
+    "GreenTan",
+    "BrownBlue",
+    "BrightColors",
+    "NeutralBlue",
+    "Kay",
+    "TanBlue",
+]
+
+# Theme configuration file
+THEME_CONFIG_FILE: Final[Path] = CONFIG_DIR / "theme.json"
+
 SUCCESS_COLOR: Final[str] = "#4CAF50"
 ERROR_COLOR: Final[str] = "#F44336"
 WARNING_COLOR: Final[str] = "#FF9800"

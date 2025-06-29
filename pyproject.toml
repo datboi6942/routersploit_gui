@@ -9,7 +9,8 @@ packages = [{include = "routersploit_gui"}]
 [tool.poetry.dependencies]
 python = "^3.11"
 routersploit = "^3.4.0"
-PySimpleGUI = "^4.60.0"
+flask = "^3.0.0"
+flask-socketio = "^5.3.6"
 structlog = "^23.2.0"
 
 [tool.poetry.group.dev.dependencies]
