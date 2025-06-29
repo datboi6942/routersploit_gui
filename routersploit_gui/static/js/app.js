@@ -565,6 +565,11 @@ class RouterSploitGUI {
         document.getElementById('modulePath').textContent = module.path;
         document.getElementById('moduleDescription').textContent = module.description;
         
+        // Update CVE information
+        console.log('Module object received:', module);
+        console.log('CVE list from module:', module.cve_list);
+        this.renderCVEInfo(module.cve_list || []);
+        
         // Render module options
         this.renderModuleOptions(module.options);
         
@@ -577,6 +582,47 @@ class RouterSploitGUI {
         
         // Enable run button if module is selected
         this.updateUI();
+    }
+    
+    renderCVEInfo(cveList) {
+        console.log('renderCVEInfo called with:', cveList);
+        console.log('CVE Array Length:', cveList ? cveList.length : 'undefined');
+        const cveContainer = document.getElementById('cveInfo');
+        if (!cveContainer) {
+            console.warn('CVE container not found');
+            return;
+        }
+        
+        if (!cveList || cveList.length === 0) {
+            console.log('No CVEs to display, hiding container');
+            cveContainer.style.display = 'none';
+            return;
+        } else {
+            console.log('CVEs found! Showing container with CVEs:', cveList);
+        }
+        
+        console.log('Displaying CVEs:', cveList);
+        cveContainer.style.display = 'block';
+        
+        const cveContent = cveList.map(cve => {
+            // Create clickable CVE links to CVE details
+            const cveUrl = `https://cve.mitre.org/cgi-bin/cvename.cgi?name=${cve}`;
+            const nvdUrl = `https://nvd.nist.gov/vuln/detail/${cve}`;
+            
+            return `
+                <div class="cve-item">
+                    <span class="cve-badge">${cve}</span>
+                    <div class="cve-links">
+                        <a href="${cveUrl}" target="_blank" class="cve-link" title="View CVE details on MITRE">MITRE</a>
+                        <a href="${nvdUrl}" target="_blank" class="cve-link" title="View CVE details on NVD">NVD</a>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        document.getElementById('cveList').innerHTML = cveContent;
+        console.log('CVE HTML content set:', cveContent);
+        console.log('CVE container display style:', cveContainer.style.display);
     }
     
     renderModuleOptions(options) {

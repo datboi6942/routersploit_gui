@@ -108,7 +108,8 @@ class RouterSploitWebGUI:
                 'options': json_options,
                 'payloads': [{'name': p.name, 'path': p.dotted_path, 'options': self._serialize_options(p.opts)} 
                            for p in payloads],
-                'is_exploit': self._is_exploit_module(module)
+                'is_exploit': self._is_exploit_module(module),
+                'cve_list': module.cve_list
             })
         
         @self.app.route('/api/run', methods=['POST'])
@@ -381,7 +382,8 @@ class RouterSploitWebGUI:
                     'name': value.name,
                     'description': value.description,
                     'dotted_path': value.dotted_path,
-                    'category': value.category
+                    'category': value.category,
+                    'cve_list': getattr(value, 'cve_list', [])
                 }
             elif isinstance(value, dict):
                 # This is a nested category - separate modules and subcategories
@@ -394,7 +396,8 @@ class RouterSploitWebGUI:
                             'name': child_value.name,
                             'description': child_value.description,
                             'dotted_path': child_value.dotted_path,
-                            'category': child_value.category
+                            'category': child_value.category,
+                            'cve_list': getattr(child_value, 'cve_list', [])
                         })
                     elif isinstance(child_value, dict):
                         # Recursive call for nested categories

@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import pkgutil
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type
@@ -23,6 +24,7 @@ class ModuleMeta:
         category: Module category (exploits, scanners, etc.)
         name: Human-readable name
         description: Module description
+        cve_list: List of CVE numbers associated with the module
     """
     
     dotted_path: str
@@ -31,6 +33,12 @@ class ModuleMeta:
     category: str
     name: str
     description: str
+    cve_list: List[str] = None
+
+    def __post_init__(self):
+        """Ensure cve_list is never None."""
+        if self.cve_list is None:
+            self.cve_list = []
 
 
 class ModuleLoader:
@@ -151,11 +159,12 @@ class ModuleLoader:
             # Clean up the dotted path (remove routersploit.modules prefix)
             clean_path = dotted_path.replace("routersploit.modules.", "")
             
-            # For payloads, use the module path to create a descriptive name
+            # Create descriptive names based on module path instead of class name
+            path_parts = clean_path.split(".")
+            
             if category == "payloads":
                 # Extract meaningful name from the path
                 # e.g., "payloads.armle.bind_tcp" -> "ARM LE Bind TCP"
-                path_parts = clean_path.split(".")
                 if len(path_parts) >= 3:  # payloads.arch.name
                     arch = path_parts[1].upper()  # armle -> ARMLE
                     payload_name = path_parts[2].replace("_", " ").title()  # bind_tcp -> Bind Tcp
@@ -163,13 +172,36 @@ class ModuleLoader:
                 else:
                     # Fallback to path-based name
                     name = clean_path.split(".")[-1].replace("_", " ").title()
+            elif category == "exploits":
+                # For exploits, create names from the module path
+                # e.g., "exploits.routers.dlink.dcs_930l_auth_rce" -> "DCS 930L Auth RCE"
+                if len(path_parts) >= 3:
+                    # Use the last part of the path as the exploit name
+                    exploit_name = path_parts[-1].replace("_", " ").title()
+                    name = exploit_name
+                else:
+                    name = clean_path.split(".")[-1].replace("_", " ").title()
+            elif category == "scanners":
+                # For scanners, use the module name
+                # e.g., "scanners.autopwn" -> "Autopwn"
+                name = path_parts[-1].replace("_", " ").title()
+            elif category == "creds":
+                # For creds modules, create descriptive names
+                # e.g., "creds.routers.dlink.http_default_creds" -> "HTTP Default Creds"
+                if len(path_parts) >= 3:
+                    cred_name = path_parts[-1].replace("_", " ").title()
+                    name = cred_name
+                else:
+                    name = path_parts[-1].replace("_", " ").title()
             else:
-                # For other modules, use class name as before
-                class_name = cls.__name__
-                name = class_name.replace("_", " ").title()
+                # For other modules, use the last part of the path
+                name = path_parts[-1].replace("_", " ").title()
             
             # Try multiple ways to get a meaningful description
             description = self._extract_description(instance, cls, name)
+            
+            # Extract CVE information
+            cve_list = self._extract_cve_info(instance, cls)
             
             return ModuleMeta(
                 dotted_path=clean_path,
@@ -178,6 +210,7 @@ class ModuleLoader:
                 category=category,
                 name=name,
                 description=description,
+                cve_list=cve_list,
             )
             
         except Exception as e:
@@ -728,21 +761,78 @@ class ModuleLoader:
         
         # If still no description, create one from the module path/name
         if not description:
-            # Create description based on module name and category
-            if "rce" in name.lower():
-                description = f"Remote Code Execution exploit for {name}"
-            elif "sqli" in name.lower() or "sql" in name.lower():
-                description = f"SQL Injection exploit for {name}"
-            elif "auth" in name.lower():
-                description = f"Authentication bypass exploit for {name}"
-            elif "scanner" in cls.__module__:
-                description = f"Network scanner module: {name}"
-            elif "creds" in cls.__module__:
-                description = f"Credential testing module: {name}"
-            elif "payload" in cls.__module__:
+            # Get the module path for better context
+            module_path = cls.__module__.replace("routersploit.modules.", "")
+            path_parts = module_path.split(".")
+            
+            # Extract vendor/device info for better descriptions
+            vendor = ""
+            device_type = ""
+            
+            if len(path_parts) >= 3:
+                if path_parts[0] == "exploits":
+                    device_type = path_parts[1]  # routers, cameras, etc.
+                    vendor = path_parts[2].title()  # dlink, netgear, etc.
+                elif path_parts[0] == "creds":
+                    device_type = path_parts[1]  # routers, cameras, etc.
+                    vendor = path_parts[2].title() if len(path_parts) > 2 else ""
+            
+            # Create description based on module name and category patterns
+            name_lower = name.lower()
+            if "rce" in name_lower:
+                if vendor:
+                    description = f"Remote Code Execution exploit targeting {vendor} {device_type}"
+                else:
+                    description = f"Remote Code Execution exploit"
+            elif "sqli" in name_lower or "sql" in name_lower:
+                if vendor:
+                    description = f"SQL Injection exploit targeting {vendor} {device_type}"
+                else:
+                    description = f"SQL Injection exploit"
+            elif "auth" in name_lower and "bypass" in name_lower:
+                if vendor:
+                    description = f"Authentication bypass exploit for {vendor} {device_type}"
+                else:
+                    description = f"Authentication bypass exploit"
+            elif "disclosure" in name_lower or "leak" in name_lower:
+                if vendor:
+                    description = f"Information disclosure exploit for {vendor} {device_type}"
+                else:
+                    description = f"Information disclosure exploit"
+            elif "path_traversal" in name_lower or "traversal" in name_lower:
+                if vendor:
+                    description = f"Path traversal exploit for {vendor} {device_type}"
+                else:
+                    description = f"Path traversal exploit"
+            elif "dos" in name_lower or "denial" in name_lower:
+                if vendor:
+                    description = f"Denial of Service exploit for {vendor} {device_type}"
+                else:
+                    description = f"Denial of Service exploit"
+            elif "command" in name_lower and "inject" in name_lower:
+                if vendor:
+                    description = f"Command injection exploit for {vendor} {device_type}"
+                else:
+                    description = f"Command injection exploit"
+            elif "default" in name_lower and "creds" in name_lower:
+                if vendor:
+                    description = f"Default credentials check for {vendor} {device_type}"
+                else:
+                    description = f"Default credentials check"
+            elif "scanner" in cls.__module__ or path_parts[0] == "scanners":
+                if "autopwn" in name_lower:
+                    description = f"Automated exploitation scanner"
+                else:
+                    description = f"Network security scanner: {name}"
+            elif "payload" in cls.__module__ or path_parts[0] == "payloads":
                 description = f"Payload module: {name}"
+            elif "encoder" in cls.__module__ or path_parts[0] == "encoders":
+                description = f"Payload encoder: {name}"
             else:
-                description = f"Security testing module: {name}"
+                if vendor and device_type:
+                    description = f"Security testing module for {vendor} {device_type}"
+                else:
+                    description = f"Security testing module"
         
         # Clean up the description
         description = self._clean_description(description)
@@ -752,6 +842,97 @@ class ModuleLoader:
             description = description[:117] + "..."
             
         return description
+    
+    def _extract_cve_info(self, instance: Any, cls: Type[Any]) -> List[str]:
+        """Extract CVE information from a RouterSploit module.
+        
+        Args:
+            instance: Module instance
+            cls: Module class
+            
+        Returns:
+            List of CVE numbers found in the module
+        """
+        cve_list = []
+        
+        # CVE pattern matching (CVE-YEAR-NUMBER format)
+        cve_pattern = re.compile(r'CVE-\d{4}-\d{4,}', re.IGNORECASE)
+        
+        try:
+            # Method 1: Check for __info__ attribute (most common in RouterSploit)
+            if hasattr(cls, '__info__') and isinstance(cls.__info__, dict):
+                info = cls.__info__
+                
+                # Check references section
+                if 'references' in info:
+                    references = info['references']
+                    if isinstance(references, (list, tuple)):
+                        for ref in references:
+                            if isinstance(ref, str):
+                                cves = cve_pattern.findall(ref)
+                                cve_list.extend(cves)
+                
+                # Check description for CVE mentions
+                if 'description' in info and isinstance(info['description'], str):
+                    cves = cve_pattern.findall(info['description'])
+                    cve_list.extend(cves)
+                
+                # Check name for CVE mentions
+                if 'name' in info and isinstance(info['name'], str):
+                    cves = cve_pattern.findall(info['name'])
+                    cve_list.extend(cves)
+            
+            # Method 2: Check instance attributes
+            if hasattr(instance, '__info__') and isinstance(instance.__info__, dict):
+                info = instance.__info__
+                
+                if 'references' in info:
+                    references = info['references']
+                    if isinstance(references, (list, tuple)):
+                        for ref in references:
+                            if isinstance(ref, str):
+                                cves = cve_pattern.findall(ref)
+                                cve_list.extend(cves)
+            
+            # Method 3: Check docstring
+            if cls.__doc__:
+                cves = cve_pattern.findall(cls.__doc__)
+                cve_list.extend(cves)
+            
+            # Method 4: Check module path for CVE hints (like netgear module with 2017-5521)
+            module_path = cls.__module__ if hasattr(cls, '__module__') else ""
+            if module_path:
+                cves = cve_pattern.findall(module_path)
+                cve_list.extend(cves)
+                
+                # Also check if there are year-number patterns that might be CVEs
+                year_pattern = re.compile(r'-(\d{4})-(\d{4,})', re.IGNORECASE)
+                year_matches = year_pattern.findall(module_path)
+                for year, number in year_matches:
+                    # If it looks like a CVE format, add it
+                    if int(year) >= 1999 and int(year) <= 2030:  # Reasonable CVE year range
+                        cve_candidate = f"CVE-{year}-{number}"
+                        if cve_candidate not in cve_list:
+                            cve_list.append(cve_candidate)
+            
+            # Remove duplicates and normalize case
+            unique_cves = []
+            for cve in cve_list:
+                cve_normalized = cve.upper()
+                if cve_normalized not in unique_cves:
+                    unique_cves.append(cve_normalized)
+            
+            # Sort CVEs for consistent output
+            unique_cves.sort()
+            
+            if unique_cves:
+                logger.debug("Found CVEs for module", module=cls.__name__, cves=unique_cves)
+            
+            return unique_cves
+            
+        except Exception as e:
+            logger.debug("Failed to extract CVE info", module=cls.__name__, error=str(e))
+            return []
     
     def _clean_description(self, description: str) -> str:
         """Clean and format a description string.
