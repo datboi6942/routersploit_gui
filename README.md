@@ -14,6 +14,7 @@ A modern, web-based GUI for RouterSploit - making penetration testing accessible
 - 📊 **Color-coded Output**: Easy-to-read execution results
 - 💥 **Background Execution**: Non-blocking module execution
 - 🛡️ **Error Handling**: Comprehensive validation and error reporting
+- 🤖 **Auto-Own AI Agent**: LLM-powered automated vulnerability assessment and exploitation
 
 ## 🚀 Quick Start
 
@@ -74,6 +75,39 @@ python main.py --debug
 - **Generic**: General-purpose security testing tools
 - **Payloads**: Code execution payloads for exploits
 
+## 🤖 Auto-Own AI Agent
+
+The Auto-Own feature uses OpenAI's GPT-4 to automatically:
+
+1. **Scan Targets**: Use nmap to enumerate services and versions
+2. **Analyze Vulnerabilities**: Identify potential security weaknesses
+3. **Search Exploits**: Find existing exploits in Metasploit and Exploit-DB
+4. **Generate Exploits**: Create custom exploits when none exist
+5. **Test Exploits**: Verify exploit functionality and success
+6. **Focus on RCE**: Prioritize Remote Code Execution opportunities
+
+### Configuration
+
+Set these environment variables to enable Auto-Own:
+
+```bash
+# Required: OpenAI API key
+export OPENAI_API_KEY="your-openai-api-key"
+
+# Optional: Customize behavior
+export AUTO_OWN_ENABLED="true"
+export OPENAI_MODEL="gpt-4"
+export NMAP_PATH="/usr/bin/nmap"
+export MSF_PATH="/usr/bin/msfconsole"
+export EXPLOIT_DB_API_KEY="your-exploit-db-key"
+```
+
+### Usage
+
+1. **Web Interface**: Use the "Auto-Own" tab in the web GUI
+2. **Command Line**: Run `python demo_auto_own.py` for a demo
+3. **API**: Use the `/api/auto-own/*` endpoints programmatically
+
 ## 🛠️ Architecture
 
 The application follows a clean, modular architecture:
@@ -119,6 +153,10 @@ routersploit_gui/
 - **Flask-SocketIO**: Real-time communication
 - **RouterSploit**: The core penetration testing framework
 - **structlog**: Structured logging
+- **OpenAI**: LLM API for AI-powered automation
+- **python-nmap**: Nmap integration for network scanning
+- **requests**: HTTP client for API interactions
+- **pydantic**: Data validation and settings management
 
 ### Running Tests
 
@@ -157,10 +195,21 @@ The application exposes a RESTful API:
 - `POST /api/stop` - Stop execution
 - `GET /api/status` - Get execution status
 
+### Auto-Own API Endpoints
+
+- `POST /api/auto-own/start` - Start auto-own process
+- `POST /api/auto-own/stop` - Stop auto-own process
+- `GET /api/auto-own/status` - Get auto-own status
+- `GET /api/auto-own/targets` - Get available targets
+- `GET /api/auto-own/history/<target>` - Get target history
+
 WebSocket events:
 - `output` - Real-time execution output
 - `complete` - Execution completion
 - `status` - Status updates
+- `auto_own_output` - Auto-own process output
+- `auto_own_complete` - Auto-own completion
+- `auto_own_progress` - Auto-own progress updates
 
 ## 🔒 Security Considerations
 
@@ -168,6 +217,9 @@ WebSocket events:
 - **Network Access**: Be cautious when binding to public interfaces
 - **Privilege Escalation**: Some modules may require elevated privileges
 - **Target Authorization**: Only test against systems you own or have permission to test
+- **AI Safety**: Auto-Own feature requires OpenAI API key and should be used responsibly
+- **Tool Access**: LLM agent has controlled access to security tools (nmap, metasploit, etc.)
+- **Logging**: All auto-own actions are logged for audit purposes
 
 ## 🤝 Contributing
 

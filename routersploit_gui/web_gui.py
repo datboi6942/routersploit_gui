@@ -12,6 +12,7 @@ from . import config
 from .module_loader import ModuleLoader, ModuleMeta
 from .runner import RunnerManager
 from .console import ConsoleHandler
+from .auto_own_runner import AutoOwnManager
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,7 @@ class RouterSploitWebGUI:
         self.module_loader = ModuleLoader()
         self.runner_manager = RunnerManager()
         self.console_handler = ConsoleHandler(self.module_loader)
+        self.auto_own_manager = AutoOwnManager()
         
         # Application state
         self.modules: List[ModuleMeta] = []
@@ -184,6 +186,76 @@ class RouterSploitWebGUI:
                 'running': self.runner_manager.is_running(),
                 'current_module': self.current_module.dotted_path if self.current_module else None
             })
+        
+        @self.app.route('/api/auto-own/start', methods=['POST'])
+        def start_auto_own() -> Any:
+            """Start an auto-own process."""
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            target = data.get('target')
+            verbose = bool(data.get('verbose', False))
+            debug = bool(data.get('debug', False))
+            if not target:
+                return jsonify({'error': 'Target not specified'}), 400
+            
+            # Check if auto-own is enabled
+            if not config.AUTO_OWN_ENABLED:
+                return jsonify({'error': 'Auto-Own feature is disabled'}), 403
+            
+            # Check if OpenAI is configured
+            if not config.get_openai_api_key():
+                return jsonify({'error': 'OpenAI API key not configured'}), 403
+            
+            # Start auto-own process
+            success = self.auto_own_manager.start_auto_own(
+                target=target,
+                on_output=self._on_auto_own_output,
+                on_complete=self._on_auto_own_complete,
+                on_progress=self._on_auto_own_progress,
+                verbose=verbose,
+                debug=debug
+            )
+            
+            if success:
+                return jsonify({'status': 'started', 'target': target})
+            else:
+                return jsonify({'error': 'Failed to start auto-own process'}), 500
+        
+        @self.app.route('/api/auto-own/stop', methods=['POST'])
+        def stop_auto_own() -> Any:
+            """Stop the current auto-own process."""
+            self.auto_own_manager.stop_current()
+            return jsonify({'status': 'stopped'})
+        
+        @self.app.route('/api/auto-own/status')
+        def get_auto_own_status() -> Any:
+            """Get auto-own status and configuration."""
+            return jsonify(self.auto_own_manager.get_status())
+        
+        @self.app.route('/api/auto-own/targets')
+        def get_auto_own_targets() -> Any:
+            """Get list of targets with auto-own history."""
+            targets = self.auto_own_manager.agent.get_available_targets()
+            return jsonify({'targets': targets})
+        
+        @self.app.route('/api/auto-own/history/<target>')
+        def get_auto_own_history(target: str) -> Any:
+            """Get auto-own history for a specific target."""
+            history = self.auto_own_manager.get_target_history(target)
+            return jsonify({'history': history})
+        
+        @self.app.route('/api/auto-own/set-api-key', methods=['POST'])
+        def set_auto_own_api_key() -> Any:
+            """Set the OpenAI API key for Auto-Own."""
+            data = request.get_json()
+            if not data or 'api_key' not in data:
+                return jsonify({'error': 'No API key provided'}), 400
+            try:
+                config.set_openai_api_key(data['api_key'])
+                return jsonify({'status': 'success'})
+            except Exception as e:
+                return jsonify({'error': str(e)}), 500
     
     def _setup_socket_handlers(self) -> None:
         """Setup SocketIO event handlers."""
@@ -554,6 +626,30 @@ class RouterSploitWebGUI:
             'error': error_msg
         })
     
+    def _on_auto_own_output(self, line: str, level: str) -> None:
+        """Handle auto-own output."""
+        self.socketio.emit('auto_own_output', {
+            'line': line,
+            'level': level
+        })
+        logger.info("Auto-own output", line=line, level=level)
+    
+    def _on_auto_own_complete(self, success: bool, error_msg: Optional[str]) -> None:
+        """Handle auto-own completion."""
+        self.socketio.emit('auto_own_complete', {
+            'success': success,
+            'error': error_msg
+        })
+        logger.info("Auto-own process completed", success=success, error=error_msg)
+    
+    def _on_auto_own_progress(self, status: str, percentage: float) -> None:
+        """Handle auto-own progress updates."""
+        self.socketio.emit('auto_own_progress', {
+            'status': status,
+            'percentage': percentage
+        })
+        logger.info("Auto-own progress", status=status, percentage=percentage)
+    
     def run(self, debug: bool = False) -> None:
         """Start the web server.
         
@@ -577,6 +673,7 @@ class RouterSploitWebGUI:
         """Cleanup resources."""
         self.runner_manager.cleanup()
         self.console_handler.cleanup()
+        self.auto_own_manager.cleanup()
 
 
 def create_app() -> Flask:

@@ -1,3 +1,7 @@
 routersploit>=3.4.0
 PySimpleGUI>=4.60.0
-structlog>=23.2.0 
+structlog>=23.2.0
+openai>=1.0.0
+python-nmap>=0.7.1
+requests>=2.31.0
+pydantic>=2.0.0 

@@ -88,6 +88,19 @@ class RouterSploitGUI {
             this.enableConsoleInput(false);
             this.updateConsoleStatus('Disconnected', 'secondary');
         });
+        
+        // Auto-Own event handlers
+        this.socket.on('auto_own_output', (data) => {
+            this.addAutoOwnOutput(data.line, data.level);
+        });
+        
+        this.socket.on('auto_own_complete', (data) => {
+            this.onAutoOwnComplete(data.success, data.error);
+        });
+        
+        this.socket.on('auto_own_progress', (data) => {
+            this.updateAutoOwnProgress(data.status, data.percentage);
+        });
     }
     
     setupEventHandlers() {
@@ -126,9 +139,16 @@ class RouterSploitGUI {
         // Console event handlers
         this.setupConsoleEventHandlers();
         
+        // Auto-Own event handlers
+        this.setupAutoOwnEventHandlers();
+        
         // Tab change handlers
         document.getElementById('console-tab').addEventListener('shown.bs.tab', () => {
             this.onConsoleTabShown();
+        });
+        
+        document.getElementById('auto-own-tab').addEventListener('shown.bs.tab', () => {
+            this.onAutoOwnTabShown();
         });
     }
     
@@ -1057,6 +1077,269 @@ class RouterSploitGUI {
                 parent = parent.parentElement;
             }
         });
+    }
+    
+    // Auto-Own Methods
+    setupAutoOwnEventHandlers() {
+        const startAutoOwnBtn = document.getElementById('startAutoOwnBtn');
+        const stopAutoOwnBtn = document.getElementById('stopAutoOwnBtn');
+        const clearAutoOwnBtn = document.getElementById('clearAutoOwnBtn');
+        const targetHistorySelect = document.getElementById('targetHistorySelect');
+        const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+        const openaiApiKeyInput = document.getElementById('openaiApiKey');
+
+        // Start auto-own button
+        startAutoOwnBtn.addEventListener('click', () => {
+            this.startAutoOwn();
+        });
+
+        // Stop auto-own button
+        stopAutoOwnBtn.addEventListener('click', () => {
+            this.stopAutoOwn();
+        });
+
+        // Clear auto-own output button
+        clearAutoOwnBtn.addEventListener('click', () => {
+            this.clearAutoOwnOutput();
+        });
+
+        // Save API key button
+        saveApiKeyBtn.addEventListener('click', async () => {
+            const apiKey = openaiApiKeyInput.value.trim();
+            if (!apiKey) {
+                this.showError('Please enter your OpenAI API key');
+                return;
+            }
+            try {
+                const response = await fetch('/api/auto-own/set-api-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    this.showSuccess('API key saved successfully');
+                    openaiApiKeyInput.value = '';
+                } else {
+                    this.showError(data.error || 'Failed to save API key');
+                }
+            } catch (error) {
+                this.showError('Failed to save API key');
+            }
+        });
+
+        // Target history selection
+        targetHistorySelect.addEventListener('change', (e) => {
+            if (e.target.value) {
+                document.getElementById('autoOwnTarget').value = e.target.value;
+            }
+        });
+
+        // Auto-own target input (Enter key)
+        document.getElementById('autoOwnTarget').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.startAutoOwn();
+            }
+        });
+    }
+    
+    onAutoOwnTabShown() {
+        // Load target history when auto-own tab is shown
+        this.loadAutoOwnTargets();
+    }
+    
+    async loadAutoOwnTargets() {
+        try {
+            const response = await fetch('/api/auto-own/targets');
+            const data = await response.json();
+            
+            const select = document.getElementById('targetHistorySelect');
+            select.innerHTML = '<option value="">Select from history...</option>';
+            
+            data.targets.forEach(target => {
+                const option = document.createElement('option');
+                option.value = target;
+                option.textContent = target;
+                select.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Failed to load auto-own targets:', error);
+        }
+    }
+    
+    async startAutoOwn() {
+        const targetInput = document.getElementById('autoOwnTarget');
+        const verboseCheckbox = document.getElementById('autoOwnVerbose');
+        const debugCheckbox = document.getElementById('autoOwnDebug');
+        const target = targetInput.value.trim();
+        const isVerbose = verboseCheckbox.checked;
+        const isDebug = debugCheckbox.checked;
+
+        if (!target) {
+            this.showError("Please enter a target IP address or hostname.");
+            return;
+        }
+        
+        this.clearAutoOwnOutput();
+        this.addAutoOwnOutput(`Starting Auto-Own process for target: ${target}`, 'info');
+        if (isDebug) {
+            this.addAutoOwnOutput(`🐛 Debug mode enabled - showing internal agent operations`, 'warning');
+        }
+        this.enableAutoOwnControls(true);
+        this.showAutoOwnProgress();
+        this.updateAutoOwnProgress('Initializing', 0);
+
+        try {
+            const response = await fetch('/api/auto-own/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target, verbose: isVerbose, debug: isDebug }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                this.showSuccess('Auto-Own process started');
+                this.updateAutoOwnStatus('Running', 'warning');
+                this.enableAutoOwnControls(true);
+                this.showAutoOwnProgress();
+                this.clearAutoOwnOutput();
+                this.addAutoOwnOutput(`Starting Auto-Own process for target: ${target}`, 'info');
+            } else {
+                this.showError(result.error || 'Failed to start Auto-Own process');
+            }
+        } catch (error) {
+            console.error('Failed to start auto-own:', error);
+            this.showError('Failed to start Auto-Own process');
+        }
+    }
+    
+    async stopAutoOwn() {
+        try {
+            const response = await fetch('/api/auto-own/stop', {
+                method: 'POST'
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showSuccess('Auto-Own process stopped');
+                this.updateAutoOwnStatus('Stopped', 'secondary');
+                this.enableAutoOwnControls(false);
+                this.hideAutoOwnProgress();
+            } else {
+                this.showError(data.error || 'Failed to stop Auto-Own process');
+            }
+        } catch (error) {
+            console.error('Failed to stop auto-own:', error);
+            this.showError('Failed to stop Auto-Own process');
+        }
+    }
+    
+    addAutoOwnOutput(line, level) {
+        const outputContainer = document.getElementById('autoOwnOutput');
+        const outputLine = document.createElement('div');
+        outputLine.className = `auto-own-line mb-1`;
+        
+        // Add timestamp
+        const timestamp = new Date().toLocaleTimeString();
+        const timestampSpan = document.createElement('span');
+        timestampSpan.className = 'text-muted me-2';
+        timestampSpan.textContent = `[${timestamp}]`;
+        outputLine.appendChild(timestampSpan);
+        
+        // Add content with appropriate styling
+        const contentSpan = document.createElement('span');
+        contentSpan.textContent = line;
+        
+        switch (level) {
+            case 'success':
+                contentSpan.className = 'text-success';
+                break;
+            case 'error':
+                contentSpan.className = 'text-danger';
+                break;
+            case 'warning':
+                contentSpan.className = 'text-warning';
+                break;
+            case 'info':
+                contentSpan.className = 'text-info';
+                break;
+            default:
+                contentSpan.className = 'text-dark';
+        }
+        
+        outputLine.appendChild(contentSpan);
+        outputContainer.appendChild(outputLine);
+        
+        // Auto-scroll to bottom
+        outputContainer.scrollTop = outputContainer.scrollHeight;
+    }
+    
+    clearAutoOwnOutput() {
+        const outputContainer = document.getElementById('autoOwnOutput');
+        outputContainer.innerHTML = `
+            <div class="text-muted">
+                <i class="fas fa-robot"></i> Auto-Own AI Agent Ready<br>
+                <small>Enter a target IP address and click "Start Auto-Own" to begin automated vulnerability assessment and exploitation.</small>
+            </div>
+        `;
+    }
+    
+    onAutoOwnComplete(success, error) {
+        if (success) {
+            this.addAutoOwnOutput('Auto-Own process completed successfully!', 'success');
+            this.updateAutoOwnStatus('Completed', 'success');
+        } else {
+            this.addAutoOwnOutput(`Auto-Own process failed: ${error}`, 'error');
+            this.updateAutoOwnStatus('Failed', 'danger');
+        }
+        
+        this.enableAutoOwnControls(false);
+        this.hideAutoOwnProgress();
+    }
+    
+    updateAutoOwnProgress(status, percentage) {
+        const progressContainer = document.getElementById('autoOwnProgress');
+        const progressText = document.getElementById('autoOwnProgressText');
+        const progressPercent = document.getElementById('autoOwnProgressPercent');
+        const progressBar = document.getElementById('autoOwnProgressBar');
+        
+        progressText.textContent = status;
+        progressPercent.textContent = `${Math.round(percentage)}%`;
+        progressBar.style.width = `${percentage}%`;
+        
+        if (percentage >= 100) {
+            progressBar.className = 'progress-bar bg-success';
+        } else if (percentage >= 50) {
+            progressBar.className = 'progress-bar bg-warning';
+        } else {
+            progressBar.className = 'progress-bar bg-info';
+        }
+    }
+    
+    showAutoOwnProgress() {
+        document.getElementById('autoOwnProgress').style.display = 'block';
+    }
+    
+    hideAutoOwnProgress() {
+        document.getElementById('autoOwnProgress').style.display = 'none';
+    }
+    
+    updateAutoOwnStatus(text, type) {
+        const statusBadge = document.getElementById('autoOwnStatus');
+        statusBadge.className = `badge bg-${type}`;
+        statusBadge.innerHTML = `<i class="fas fa-circle"></i> ${text}`;
+    }
+    
+    enableAutoOwnControls(running) {
+        const startBtn = document.getElementById('startAutoOwnBtn');
+        const stopBtn = document.getElementById('stopAutoOwnBtn');
+        const targetInput = document.getElementById('autoOwnTarget');
+        
+        startBtn.disabled = running;
+        stopBtn.disabled = !running;
+        targetInput.disabled = running;
     }
 }
 
