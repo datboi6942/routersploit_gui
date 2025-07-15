@@ -563,13 +563,13 @@ class NmapScanner:
         self.scanner = nmap.PortScanner()
         self.netcat_enumerator = NetcatEnumerator()
 
-    def scan_target(self, target: str, ports: str = "1-1000", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+    def scan_target(self, target: str, ports: str = "common", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """
         Scan a target for open ports and services using nmap with netcat fallback.
         
         Args:
             target: IP address or hostname to scan.
-            ports: Port range to scan (default: 1-1000 for faster scanning).
+            ports: Port range to scan (default: 'common' for common ports, or specific range like '1-65535').
             verbose: If True, provides detailed output to the callback.
             debug: If True, provides comprehensive debug information.
             on_output: Callback function to send real-time output to.
@@ -592,9 +592,33 @@ class NmapScanner:
 
         scan_start_time = time.time()
         try:
+            # Handle common ports selection
+            if ports == "common":
+                # Comprehensive list of common ports for vulnerability assessment
+                common_ports_raw = [
+                    # Very common ports
+                    "21", "22", "23", "25", "53", "80", "110", "111", "135", "139", "143", "443", "445", "993", "995",
+                    # Database ports
+                    "1433", "1521", "3306", "3389", "5432", "5984", "6379", "7000", "7001", "8086", "9042", "9200", "9300", "11211", "27017", "27018", "27019", "28017",
+                    # Web services
+                    "81", "591", "593", "832", "981", "1010", "1311", "2082", "2083", "2087", "2095", "2096", "2480", "3000", "3128", "3333", "4243", "4567", "4711", "4712", "4993", "5104", "5108", "5800", "6543", "7396", "7474", "8000", "8001", "8008", "8014", "8042", "8069", "8080", "8081", "8088", "8090", "8091", "8118", "8123", "8172", "8222", "8243", "8280", "8281", "8333", "8443", "8500", "8834", "8880", "8888", "8983", "9000", "9043", "9060", "9080", "9090", "9091", "9443", "9800", "9943", "9980", "9981", "12443", "16080", "18091", "18092", "20720",
+                    # Remote access  
+                    "179", "389", "636", "989", "990", "992", "1723", "1755", "1761", "2000", "2001", "2049", "2121", "2717", "4899", "5060", "5061", "5357", "5500", "5631", "5666", "5900", "5901", "5902", "5903", "6000", "6001", "6646", "7070", "8200", "8300", "8800", "8843", "9100", "9999", "10000", "32768", "49152", "49153", "49154", "49155", "49156", "49157",
+                    # Additional common high ports
+                    "4000", "6463", "7687", "8461", "10001", "10002", "10003", "10004", "10009", "10010", "10012", "10024", "10025", "10082", "10180", "10215", "10443", "10566", "10616", "10617", "10621", "10626", "10628", "10629", "10778", "11110", "11111", "11434", "11967", "12000", "12001", "12174", "12265", "12345", "13456", "13722", "13782", "13783", "14000", "14238", "14441", "14442", "15000", "15002", "15003", "15004", "15660", "15742", "16000", "16001", "16012", "16016", "16018", "16113", "16992", "16993", "17877", "17988", "18040", "18101", "18988", "19101", "19283", "19315", "19350", "19780", "19801", "19842", "20000", "20005", "20031", "20221", "20222", "20828", "21571", "22939", "23502", "24438", "24439", "24444", "24800", "25001", "25734", "25735", "26214", "27000", "27352", "27353", "27355", "27356", "27715", "28201", "30000", "30718", "30951", "31038", "31337", "32769", "32770", "32771", "32772", "32773", "32774", "32775", "32776", "32777", "32778", "32779", "32780", "32781", "32782", "32783", "32784", "32785", "33354", "33899", "34571", "34572", "34573", "35500", "35727", "38292", "40193", "40911", "41511", "42510", "44176", "44442", "44443", "44501", "45100", "48080", "49158", "49159", "49160", "49161", "49163", "49165", "49167", "49175", "49176", "65000", "65129", "65389"
+                ]
+                # Remove duplicates by converting to set and back to list, then sort
+                common_ports = sorted(set(common_ports_raw), key=int)
+                ports_arg = ",".join(common_ports)
+                if verbose and on_output:
+                    on_output(f"[Verbose] Using comprehensive common ports scan ({len(common_ports)} ports)", "info")
+            else:
+                ports_arg = ports
+                if verbose and on_output:
+                    on_output(f"[Verbose] Using custom port range: {ports}", "info")
+            
             # Use more reasonable nmap command for faster scanning
-            # Only scan specified port range, not all ports by default
-            cmd = ["nmap", target, "-sV", "-sC", "-T4", "-v", f"-p{ports}", "-oX", "-"]
+            cmd = ["nmap", target, "-sV", "-sC", "-T4", "-v", f"-p{ports_arg}", "-oX", "-"]
             
             # If scanning localhost, exclude port 5000 to avoid interfering with the web server
             if target in ["127.0.0.1", "localhost"]:
@@ -767,8 +791,17 @@ class NmapScanner:
             logger.warning("Nmap scan returned no output", target=target)
             return {"error": "Nmap returned no output."}
 
+        # Extract XML content from mixed output
+        xml_content = self._extract_xml_content(full_xml, verbose=verbose, debug=debug, on_output=on_output)
+        if not xml_content:
+            error_message = "No valid XML content found in nmap output."
+            if on_output:
+                on_output(error_message, "error")
+            logger.error(error_message, target=target)
+            return {"error": error_message}
+
         try:
-            root = ET.fromstring(full_xml)
+            root = ET.fromstring(xml_content)
         except ET.ParseError as e:
             error_message = f"Failed to parse nmap XML output: {e}"
             if on_output:
@@ -784,6 +817,66 @@ class NmapScanner:
             on_output(f"[Verbose] ✅ Nmap scan completed for {target} in {total_scan_time:.1f}s", "success")
         
         return result
+
+    def _extract_xml_content(self, mixed_output: str, verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> str:
+        """Extract clean XML content from mixed nmap output.
+        
+        Args:
+            mixed_output: Raw output from nmap containing both XML and text
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Clean XML content or empty string if no valid XML found
+        """
+        def debug_emit(line: str, level: str = "info"):
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG-XML] {line}", "warning" if level == "info" else level)
+                
+        if debug:
+            debug_emit("Starting XML extraction from mixed output")
+            debug_emit(f"Mixed output length: {len(mixed_output)} characters")
+            
+        # Find XML start and end markers
+        xml_start_marker = "<?xml"
+        xml_end_marker = "</nmaprun>"
+        
+        lines = mixed_output.split('\n')
+        xml_lines = []
+        in_xml = False
+        
+        for line in lines:
+            # Check if we're starting XML content
+            if xml_start_marker in line:
+                in_xml = True
+                # Include the line that starts the XML
+                xml_lines.append(line)
+                if debug:
+                    debug_emit("Found XML start marker")
+                continue
+                
+            # Check if we're ending XML content  
+            if xml_end_marker in line:
+                xml_lines.append(line)
+                if debug:
+                    debug_emit("Found XML end marker")
+                break
+                
+            # Include XML lines
+            if in_xml:
+                xml_lines.append(line)
+                
+        xml_content = '\n'.join(xml_lines)
+        
+        if debug:
+            debug_emit(f"Extracted XML content length: {len(xml_content)} characters")
+            if xml_content.strip():
+                debug_emit("XML extraction successful")
+            else:
+                debug_emit("XML extraction failed - no content found")
+                
+        return xml_content.strip()
 
     def _enhance_with_netcat(self, nmap_result: Dict[str, Any], verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Enhance nmap results with netcat enumeration for unknown services.
@@ -1541,12 +1634,12 @@ class ToolManager:
         self.vuln_analyzer = VulnerabilityAnalyzer()
         self.netcat_enumerator = NetcatEnumerator()
         
-    def scan_and_analyze(self, target: str, ports: str = "1-1000", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+    def scan_and_analyze(self, target: str, ports: str = "common", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Perform complete scan and vulnerability analysis with netcat enhancement.
         
         Args:
             target: Target IP address or hostname
-            ports: Port range to scan (default: 1-1000 for faster scanning)
+            ports: Port range to scan (default: 'common' for common ports, or specific range like '1-65535')
             verbose: Whether to emit detailed output
             debug: Whether to emit comprehensive debug information
             on_output: Optional callback for output lines

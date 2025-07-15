@@ -290,8 +290,8 @@ Important: Be concise in your responses. Avoid repeating the same analysis for i
                             },
                             "ports": {
                                 "type": "string",
-                                "description": "Port range to scan (default: 1-1000)",
-                                "default": "1-1000"
+                                "description": "Port range to scan (default: 'common' for common ports, '1-65535' for comprehensive scan)",
+                                "default": "common"
                             }
                         },
                         "required": ["target"]
@@ -401,10 +401,10 @@ Important: Be concise in your responses. Avoid repeating the same analysis for i
                 
             if tool_name == "scan_target":
                 target = arguments.get("target")
-                ports = arguments.get("ports", "1-1000")
+                ports = arguments.get("ports", "common")
                 if debug:
                     debug_emit(f"Scan target: {target}, ports: {ports}")
-                result = self.tool_manager.scan_and_analyze(target, verbose=verbose, debug=debug, on_output=on_output)
+                result = self.tool_manager.scan_and_analyze(target, ports=ports, verbose=verbose, debug=debug, on_output=on_output)
                 
             elif tool_name == "analyze_vulnerabilities":
                 scan_results = arguments.get("scan_results", {})

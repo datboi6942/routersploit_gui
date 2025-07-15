@@ -101,7 +101,7 @@ class AutoOwnRunner(threading.Thread):
             self._progress("Starting vulnerability assessment", 20.0)
             self._output(f"Starting vulnerability assessment on {self.target}...", "info")
             if self.verbose:
-                self._output(f"[Verbose] Running nmap scan on {self.target} (ports 1-1000)", "info")
+                self._output(f"[Verbose] Running comprehensive nmap scan on {self.target} (common ports)", "info")
             if self.debug:
                 self._output(f"🐛 [DEBUG] Calling agent.auto_own_target with target={self.target}, verbose={self.verbose}, debug={self.debug}", "warning")
                 
