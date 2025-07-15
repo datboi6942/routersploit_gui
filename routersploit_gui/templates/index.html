@@ -3,25 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RouterSploit GUI</title>
+    <title>RouterSploit GUI - Cyberpunk Edition</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="description" content="RouterSploit GUI - Advanced penetration testing framework with cyberpunk aesthetics">
 </head>
 <body>
+    <!-- Matrix Rain Background -->
+    <div class="matrix-rain" id="matrixRain"></div>
+    
+    <!-- Particle System -->
+    <div class="particles" id="particles"></div>
+    
+    <!-- Sound Effects - Disabled for debugging -->
+    <!-- <audio> elements removed to prevent 404 errors -->
+    
     <div class="container-fluid h-100">
         <!-- Header -->
-        <nav class="navbar navbar-dark bg-dark mb-3">
+        <nav class="navbar navbar-dark mb-3 glass">
             <div class="container-fluid">
-                <span class="navbar-brand mb-0 h1">
+                <span class="navbar-brand mb-0 h1 glitch" data-text="RouterSploit GUI">
                     <i class="fas fa-shield-alt"></i> RouterSploit GUI
                 </span>
-                <div class="d-flex">
+                <div class="d-flex align-items-center">
+                    <!-- Sound Toggle -->
+                    <button id="soundToggle" class="btn btn-secondary me-2" title="Toggle Sound Effects">
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                    <!-- Theme Toggle -->
+                    <button id="themeToggle" class="btn btn-secondary me-2" title="Toggle Theme">
+                        <i class="fas fa-palette"></i>
+                    </button>
+                    <!-- Fullscreen Toggle -->
+                    <button id="fullscreenToggle" class="btn btn-secondary me-2" title="Toggle Fullscreen">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <!-- Stop Button -->
                     <button id="stopBtn" class="btn btn-danger me-2" disabled>
                         <i class="fas fa-stop"></i> Stop
                     </button>
-                    <span id="statusBadge" class="badge bg-secondary">
-                        <i class="fas fa-circle"></i> Ready
+                    <!-- Status Badge -->
+                    <span id="statusBadge" class="badge bg-secondary holographic">
+                        <i class="fas fa-circle"></i> <span class="typing-effect">Initializing...</span>
                     </span>
                 </div>
             </div>
@@ -31,19 +57,19 @@
         <div class="row h-100">
             <!-- Navigation Tabs -->
             <div class="col-12 mb-3">
-                <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+                <ul class="nav nav-tabs glass" id="mainTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="gui-tab" data-bs-toggle="tab" data-bs-target="#gui-panel" type="button" role="tab">
+                        <button class="nav-link active fade-in" id="gui-tab" data-bs-toggle="tab" data-bs-target="#gui-panel" type="button" role="tab">
                             <i class="fas fa-desktop"></i> GUI Interface
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="console-tab" data-bs-toggle="tab" data-bs-target="#console-panel" type="button" role="tab">
+                        <button class="nav-link fade-in" id="console-tab" data-bs-toggle="tab" data-bs-target="#console-panel" type="button" role="tab">
                             <i class="fas fa-terminal"></i> Console
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="auto-own-tab" data-bs-toggle="tab" data-bs-target="#auto-own-panel" type="button" role="tab">
+                        <button class="nav-link fade-in" id="auto-own-tab" data-bs-toggle="tab" data-bs-target="#auto-own-panel" type="button" role="tab">
                             <i class="fas fa-robot"></i> Auto-Own
                         </button>
                     </li>
@@ -58,20 +84,29 @@
                         <div class="row h-100">
                             <!-- Module Tree (Left Panel) -->
                             <div class="col-md-4 h-100">
-                                <div class="card h-100">
+                                <div class="card h-100 slide-up">
                                     <div class="card-header">
                                         <h5 class="mb-0">
-                                            <i class="fas fa-sitemap"></i> Modules
-                                            <span id="moduleCount" class="badge bg-primary ms-2">Loading...</span>
+                                            <i class="fas fa-sitemap text-neon"></i> Modules
+                                            <span id="moduleCount" class="badge bg-primary ms-2">
+                                                <div class="loading-dots">
+                                                    <div></div>
+                                                    <div></div>
+                                                    <div></div>
+                                                </div>
+                                            </span>
                                         </h5>
+                                        <!-- Module Search -->
+                                        <div class="mt-2">
+                                            <input type="text" id="moduleSearch" class="form-control form-control-sm" placeholder="Search modules...">
+                                        </div>
                                     </div>
                                     <div class="card-body p-0" style="overflow-y: auto;">
+                                        <div class="scanning-line" id="scanningLine" style="display: none;"></div>
                                         <div id="moduleTree" class="tree">
                                             <div class="text-center p-3">
-                                                <div class="spinner-border" role="status">
-                                                    <span class="visually-hidden">Loading...</span>
-                                                </div>
-                                                <p class="mt-2">Loading modules...</p>
+                                                <div class="loading-spinner"></div>
+                                                <p class="mt-2 text-neon typing-effect">Scanning modules...</p>
                                             </div>
                                         </div>
                                     </div>
@@ -80,17 +115,17 @@
 
                             <!-- Module Details and Options (Middle Panel) -->
                             <div class="col-md-5 h-100">
-                                <div class="card h-100">
+                                <div class="card h-100 slide-up">
                                     <div class="card-header">
                                         <h5 class="mb-0">
-                                            <i class="fas fa-cog"></i> Configuration
+                                            <i class="fas fa-cog text-neon"></i> Configuration
                                         </h5>
                                     </div>
                                     <div class="card-body" style="overflow-y: auto;">
                                         <!-- Module Info -->
                                         <div id="moduleInfo" class="d-none">
                                             <div class="mb-3">
-                                                <h6 id="moduleName" class="text-primary"></h6>
+                                                <h6 id="moduleName" class="text-neon"></h6>
                                                 <small id="modulePath" class="text-muted"></small>
                                                 <p id="moduleDescription" class="mt-2"></p>
                                                 
@@ -105,10 +140,12 @@
                                             
                                             <!-- Quick Target Setup -->
                                             <div class="mb-3">
-                                                <label class="form-label">Quick Target:</label>
+                                                <label class="form-label">
+                                                    <i class="fas fa-bullseye text-neon"></i> Quick Target:
+                                                </label>
                                                 <div class="input-group">
                                                     <input type="text" id="quickTarget" class="form-control" placeholder="e.g., 192.168.1.1">
-                                                    <button id="applyTargetBtn" class="btn btn-outline-secondary" type="button">
+                                                    <button id="applyTargetBtn" class="btn btn-primary" type="button">
                                                         <i class="fas fa-bullseye"></i> Apply
                                                     </button>
                                                 </div>
@@ -116,14 +153,18 @@
 
                                             <!-- Module Options -->
                                             <div id="moduleOptionsSection">
-                                                <h6>Module Options:</h6>
+                                                <h6 class="text-neon-secondary">
+                                                    <i class="fas fa-sliders-h"></i> Module Options:
+                                                </h6>
                                                 <div id="moduleOptions"></div>
                                             </div>
 
                                             <!-- Payload Options (for exploits) -->
                                             <div id="payloadSection" class="d-none">
-                                                <hr>
-                                                <h6>Payload:</h6>
+                                                <hr class="text-neon">
+                                                <h6 class="text-neon-secondary">
+                                                    <i class="fas fa-bomb"></i> Payload:
+                                                </h6>
                                                 <select id="payloadSelect" class="form-select mb-3">
                                                     <option value="">Select a payload...</option>
                                                 </select>
@@ -131,36 +172,45 @@
                                             </div>
 
                                             <!-- Run Button -->
-                                            <div class="d-grid gap-2 mt-3">
-                                                <button id="runBtn" class="btn btn-success" disabled>
-                                                    <i class="fas fa-play"></i> Run Module
+                                            <div class="text-center mt-4">
+                                                <button id="runBtn" class="btn btn-primary btn-lg holographic" disabled>
+                                                    <i class="fas fa-play"></i> Execute Module
                                                 </button>
                                             </div>
                                         </div>
-
-                                        <!-- Default Message -->
-                                        <div id="noModuleSelected" class="text-center text-muted">
-                                            <i class="fas fa-arrow-left fa-2x mb-3"></i>
-                                            <p>Select a module from the tree to configure its options</p>
+                                        
+                                        <!-- No Module Selected -->
+                                        <div id="noModuleSelected" class="text-center p-5">
+                                            <i class="fas fa-mouse-pointer text-neon" style="font-size: 3rem; opacity: 0.5;"></i>
+                                            <h4 class="text-neon mt-3">Select a Module</h4>
+                                            <p class="text-muted">Choose a module from the tree to configure and execute</p>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- Output (Right Panel) -->
+                            <!-- Output Panel (Right Panel) -->
                             <div class="col-md-3 h-100">
-                                <div class="card h-100">
-                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                <div class="card h-100 slide-up">
+                                    <div class="card-header">
                                         <h5 class="mb-0">
-                                            <i class="fas fa-terminal"></i> Output
+                                            <i class="fas fa-terminal text-neon"></i> Output
                                         </h5>
-                                        <button id="clearOutputBtn" class="btn btn-sm btn-outline-secondary">
-                                            <i class="fas fa-trash"></i> Clear
-                                        </button>
+                                        <div class="mt-2">
+                                            <button id="clearOutputBtn" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-trash"></i> Clear
+                                            </button>
+                                            <button id="saveOutputBtn" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-download"></i> Save
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="card-body p-0">
-                                        <div id="outputContainer" class="output-container">
-                                            <div class="output-line text-muted">Ready to execute modules...</div>
+                                    <div class="card-body p-0 d-flex flex-column">
+                                        <div id="outputContainer" class="console-output flex-grow-1 p-3">
+                                            <div class="console-line text-neon">
+                                                <span class="text-info">RouterSploit GUI v2.0</span><br>
+                                                <span class="text-muted typing-effect">System ready...</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -171,34 +221,29 @@
                     <!-- Console Tab -->
                     <div class="tab-pane fade h-100" id="console-panel" role="tabpanel">
                         <div class="row h-100">
-                            <div class="col-12 h-100">
-                                <div class="card h-100">
-                                    <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="col-12">
+                                <div class="card h-100 slide-up">
+                                    <div class="card-header">
                                         <h5 class="mb-0">
-                                            <i class="fas fa-terminal"></i> RouterSploit Console
-                                        </h5>
-                                        <div>
-                                            <button id="clearConsoleBtn" class="btn btn-sm btn-outline-secondary me-2">
-                                                <i class="fas fa-trash"></i> Clear
-                                            </button>
-                                            <span id="consoleStatus" class="badge bg-secondary">
-                                                <i class="fas fa-circle"></i> Disconnected
+                                            <i class="fas fa-terminal text-neon"></i> RouterSploit Console
+                                            <span id="consoleStatus" class="badge bg-secondary ms-2">
+                                                <i class="fas fa-circle"></i> Connecting...
                                             </span>
-                                        </div>
+                                        </h5>
                                     </div>
                                     <div class="card-body p-0 d-flex flex-column">
                                         <!-- Console Output -->
                                         <div id="consoleOutput" class="console-output flex-grow-1 p-3">
-                                            <div class="console-line text-muted">
+                                            <div class="console-line text-neon">
                                                 <span class="text-info">RouterSploit Console</span><br>
-                                                <span class="text-muted">Initializing...</span>
+                                                <span class="text-muted typing-effect">Initializing...</span>
                                             </div>
                                         </div>
                                         
                                         <!-- Console Input -->
-                                        <div class="console-input-area border-top p-3">
+                                        <div class="console-input-area p-3">
                                             <div class="input-group">
-                                                <span id="consolePrompt" class="input-group-text bg-dark text-light font-monospace">rsf &gt;</span>
+                                                <span id="consolePrompt" class="input-group-text bg-dark text-light font-monospace console-prompt">rsf &gt;</span>
                                                 <input type="text" id="consoleInput" class="form-control font-monospace" 
                                                        placeholder="Enter command..." autocomplete="off" disabled>
                                                 <button id="consoleSendBtn" class="btn btn-primary" disabled>
@@ -219,88 +264,102 @@
                     <!-- Auto-Own Tab -->
                     <div class="tab-pane fade h-100" id="auto-own-panel" role="tabpanel">
                         <div class="row h-100">
-                            <div class="col-12 h-100">
-                                <div class="card h-100">
-                                    <div class="card-header d-flex justify-content-between align-items-center">
+                            <div class="col-12">
+                                <div class="card h-100 slide-up">
+                                    <div class="card-header">
                                         <h5 class="mb-0">
-                                            <i class="fas fa-robot"></i> Auto-Own AI Agent
-                                        </h5>
-                                        <div>
-                                            <button id="stopAutoOwnBtn" class="btn btn-danger btn-sm me-2" disabled>
-                                                <i class="fas fa-stop"></i> Stop
-                                            </button>
-                                            <span id="autoOwnStatus" class="badge bg-secondary">
+                                            <i class="fas fa-robot text-neon"></i> Auto-Own AI Agent
+                                            <span id="autoOwnStatus" class="badge bg-secondary ms-2">
                                                 <i class="fas fa-circle"></i> Ready
                                             </span>
-                                        </div>
+                                        </h5>
                                     </div>
-                                    <div class="card-body d-flex flex-column h-100">
+                                    <div class="card-body d-flex flex-column">
                                         <!-- Auto-Own Configuration -->
-                                        <div class="row mb-3">
-                                            <div class="col-md-6">
-                                                <label class="form-label">OpenAI API Key:</label>
-                                                <div class="input-group mb-2">
-                                                    <input type="password" id="openaiApiKey" class="form-control" placeholder="sk-...">
-                                                    <button id="saveApiKeyBtn" class="btn btn-outline-primary" type="button">
-                                                        <i class="fas fa-save"></i> Save
-                                                    </button>
-                                                </div>
-                                                <small class="form-text text-muted">Your key is stored locally and never sent to any server except OpenAI.</small>
-                                                <div class="form-check mt-2">
-                                                    <input class="form-check-input" type="checkbox" id="autoOwnVerbose">
-                                                    <label class="form-check-label" for="autoOwnVerbose">
-                                                        Verbose Output
+                                        <div class="mb-3">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <label class="form-label">
+                                                        <i class="fas fa-key text-neon"></i> OpenAI API Key:
                                                     </label>
+                                                    <div class="input-group mb-2">
+                                                        <input type="password" id="openaiApiKey" class="form-control" placeholder="sk-...">
+                                                        <button id="saveApiKeyBtn" class="btn btn-primary" type="button">
+                                                            <i class="fas fa-save"></i> Save
+                                                        </button>
+                                                    </div>
+                                                    <small class="form-text text-muted">Your key is stored locally and never sent to any server except OpenAI.</small>
+                                                    
+                                                    <div class="mt-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" id="autoOwnVerbose">
+                                                            <label class="form-check-label text-neon-secondary" for="autoOwnVerbose">
+                                                                <i class="fas fa-volume-up"></i> Verbose Output
+                                                            </label>
+                                                        </div>
+                                                        <div class="form-check mt-2">
+                                                            <input class="form-check-input" type="checkbox" id="autoOwnDebug">
+                                                            <label class="form-check-label text-warning" for="autoOwnDebug">
+                                                                <i class="fas fa-bug"></i> Debug Mode <small class="text-muted">(Developer)</small>
+                                                            </label>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div class="form-check mt-2">
-                                                    <input class="form-check-input" type="checkbox" id="autoOwnDebug">
-                                                    <label class="form-check-label" for="autoOwnDebug">
-                                                        <span class="text-warning">🐛 Debug Mode</span> <small class="text-muted">(Developer)</small>
+                                                <div class="col-md-6">
+                                                    <label class="form-label">
+                                                        <i class="fas fa-history text-neon"></i> Target History:
                                                     </label>
+                                                    <select id="targetHistorySelect" class="form-select mb-3">
+                                                        <option value="">Select from history...</option>
+                                                    </select>
+                                                    
+                                                    <label class="form-label">
+                                                        <i class="fas fa-crosshairs text-neon"></i> Target IP/Hostname:
+                                                    </label>
+                                                    <div class="input-group">
+                                                        <input type="text" id="autoOwnTarget" class="form-control" 
+                                                               placeholder="e.g., 192.168.1.1">
+                                                        <button id="startAutoOwnBtn" class="btn btn-success holographic">
+                                                            <i class="fas fa-play"></i> Start Auto-Own
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div class="mt-2">
+                                                        <button id="stopAutoOwnBtn" class="btn btn-danger btn-sm" disabled>
+                                                            <i class="fas fa-stop"></i> Stop
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label class="form-label">Target History:</label>
-                                                <select id="targetHistorySelect" class="form-select">
-                                                    <option value="">Select from history...</option>
-                                                </select>
                                             </div>
                                         </div>
-                                        <div class="row mb-3">
-                                            <div class="col-md-6">
-                                                <label class="form-label">Target IP/Hostname:</label>
-                                                <div class="input-group">
-                                                    <input type="text" id="autoOwnTarget" class="form-control" placeholder="e.g., 192.168.1.1">
-                                                    <button id="startAutoOwnBtn" class="btn btn-success">
-                                                        <i class="fas fa-play"></i> Start Auto-Own
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- Progress Bar -->
+                                        
+                                        <!-- Auto-Own Progress -->
                                         <div id="autoOwnProgress" class="mb-3" style="display: none;">
-                                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                                <small id="autoOwnProgressText">Initializing...</small>
-                                                <small id="autoOwnProgressPercent">0%</small>
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <span id="autoOwnProgressText" class="text-neon">Starting...</span>
+                                                <span id="autoOwnProgressPercent" class="text-neon">0%</span>
                                             </div>
                                             <div class="progress">
                                                 <div id="autoOwnProgressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
                                             </div>
                                         </div>
-
+                                        
                                         <!-- Auto-Own Output -->
                                         <div class="flex-grow-1">
                                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                                <h6 class="mb-0">AI Agent Output:</h6>
+                                                <h6 class="mb-0 text-neon-secondary">
+                                                    <i class="fas fa-brain"></i> AI Agent Output:
+                                                </h6>
                                                 <button id="clearAutoOwnBtn" class="btn btn-sm btn-outline-secondary">
                                                     <i class="fas fa-trash"></i> Clear
                                                 </button>
                                             </div>
-                                            <div id="autoOwnOutput" class="border rounded p-3 bg-light" style="height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
-                                                <div class="text-muted">
+                                            <div id="autoOwnOutput" class="console-output p-3" style="height: 400px; overflow-y: auto;">
+                                                <div class="console-line text-neon">
                                                     <i class="fas fa-robot"></i> Auto-Own AI Agent Ready<br>
-                                                    <small>Enter a target IP address and click "Start Auto-Own" to begin automated vulnerability assessment and exploitation.</small>
+                                                    <small class="text-muted typing-effect">
+                                                        Enter a target IP address and click "Start Auto-Own" to begin automated vulnerability assessment and exploitation.
+                                                    </small>
                                                 </div>
                                             </div>
                                         </div>
@@ -314,9 +373,45 @@
         </div>
     </div>
 
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="loading-spinner mb-3"></div>
+            <h3 class="text-neon">Processing...</h3>
+            <p class="text-muted typing-effect">Please wait while the operation completes</p>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    
+    <!-- Debug Application Script -->
+    <script src="{{ url_for('static', filename='js/debug-app.js') }}"></script>
+    
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 10, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+        
+        .loading-content {
+            text-align: center;
+            background: var(--bg-glass);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid var(--primary-neon);
+            box-shadow: var(--shadow-neon);
+        }
+    </style>
 </body>
 </html> 

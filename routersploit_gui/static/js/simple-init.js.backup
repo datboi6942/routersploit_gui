@@ -1,0 +1,663 @@
+/**
+ * Simple RouterSploit GUI Initialization
+ * This is a minimal, bulletproof version that ensures buttons work
+ */
+
+class SimpleRouterSploitGUI {
+    constructor() {
+        this.isRunning = false;
+        this.currentModule = null;
+        this.modules = {};
+        this.moduleTree = {};
+        
+        console.log('🚀 Simple RouterSploit GUI starting...');
+        this.init();
+    }
+    
+    init() {
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.setupEverything());
+        } else {
+            this.setupEverything();
+        }
+    }
+    
+    setupEverything() {
+        console.log('🔧 Setting up Simple RouterSploit GUI...');
+        
+        try {
+            // Initialize Socket.IO
+            this.initSocket();
+            
+            // Setup all button handlers
+            this.setupButtons();
+            
+            // Load modules
+            this.loadModules();
+            
+            console.log('✅ Simple RouterSploit GUI initialized successfully');
+        } catch (error) {
+            console.error('❌ Failed to initialize Simple RouterSploit GUI:', error);
+            this.showError('Failed to initialize application: ' + error.message);
+        }
+    }
+    
+    initSocket() {
+        try {
+            if (typeof io !== 'undefined') {
+                this.socket = io();
+                this.setupSocketHandlers();
+                console.log('✅ Socket.IO initialized');
+            } else {
+                console.warn('⚠️ Socket.IO not available');
+            }
+        } catch (error) {
+            console.error('❌ Socket.IO initialization failed:', error);
+        }
+    }
+    
+    setupSocketHandlers() {
+        if (!this.socket) return;
+        
+        this.socket.on('connect', () => {
+            console.log('✅ Connected to server');
+            this.showMessage('Connected to server', 'success');
+        });
+        
+        this.socket.on('disconnect', () => {
+            console.log('⚠️ Disconnected from server');
+            this.showMessage('Disconnected from server', 'warning');
+        });
+        
+        this.socket.on('output', (data) => {
+            this.addOutput(data.line, data.level);
+        });
+        
+        this.socket.on('complete', (data) => {
+            this.isRunning = false;
+            this.updateButtons();
+            if (data.success) {
+                this.showMessage('Execution completed successfully', 'success');
+            } else {
+                this.showMessage('Execution failed: ' + (data.error || 'Unknown error'), 'danger');
+            }
+        });
+        
+        // Auto-Own handlers
+        this.socket.on('auto_own_output', (data) => {
+            this.addAutoOwnOutput(data.line, data.level);
+        });
+        
+        this.socket.on('auto_own_complete', (data) => {
+            const btn = document.getElementById('startAutoOwnBtn');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> Start Auto-Own';
+            }
+            
+            if (data.success) {
+                this.showMessage('Auto-Own completed successfully', 'success');
+            } else {
+                this.showMessage('Auto-Own failed: ' + (data.error || 'Unknown error'), 'danger');
+            }
+        });
+    }
+    
+    setupButtons() {
+        console.log('🔧 Setting up button handlers...');
+        
+        // Use a small delay to ensure DOM is fully ready
+        setTimeout(() => {
+            this.setupButton('runBtn', () => this.runModule());
+            this.setupButton('stopBtn', () => this.stopModule());
+            this.setupButton('clearOutputBtn', () => this.clearOutput());
+            this.setupButton('startAutoOwnBtn', () => this.startAutoOwn());
+            this.setupButton('stopAutoOwnBtn', () => this.stopAutoOwn());
+            this.setupButton('clearAutoOwnBtn', () => this.clearAutoOwnOutput());
+            this.setupButton('applyTargetBtn', () => this.applyQuickTarget());
+            this.setupButton('consoleSendBtn', () => this.sendConsoleCommand());
+            this.setupButton('clearConsoleBtn', () => this.clearConsole());
+            
+            // Setup input handlers
+            this.setupInputs();
+            
+            // Update button states
+            this.updateButtons();
+            
+            console.log('✅ All buttons set up');
+        }, 100);
+    }
+    
+    setupButton(buttonId, handler) {
+        const button = document.getElementById(buttonId);
+        if (button) {
+            // Remove any existing event listeners by cloning the button
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+            
+            // Add our event listener
+            newButton.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log(`🎯 Button clicked: ${buttonId}`);
+                try {
+                    handler();
+                } catch (error) {
+                    console.error(`❌ Error in ${buttonId} handler:`, error);
+                    this.showError(`Error: ${error.message}`);
+                }
+            });
+            
+            console.log(`✅ Button handler added: ${buttonId}`);
+        } else {
+            console.warn(`⚠️ Button not found: ${buttonId}`);
+        }
+    }
+    
+    setupInputs() {
+        // Quick target input - Enter key
+        const quickTarget = document.getElementById('quickTarget');
+        if (quickTarget) {
+            quickTarget.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.applyQuickTarget();
+                }
+            });
+        }
+        
+        // Console input - Enter key
+        const consoleInput = document.getElementById('consoleInput');
+        if (consoleInput) {
+            consoleInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.sendConsoleCommand();
+                }
+            });
+        }
+        
+        // Auto-Own target input - Enter key
+        const autoOwnTarget = document.getElementById('autoOwnTarget');
+        if (autoOwnTarget) {
+            autoOwnTarget.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.startAutoOwn();
+                }
+            });
+        }
+    }
+    
+    async loadModules() {
+        try {
+            console.log('📦 Loading modules...');
+            
+            const response = await fetch('/api/modules');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            this.modules = data.modules || {};
+            this.moduleTree = data.tree || {};
+            
+            this.renderModuleTree();
+            this.updateModuleCount(data.count || 0);
+            
+            console.log(`✅ Loaded ${data.count || 0} modules`);
+        } catch (error) {
+            console.error('❌ Failed to load modules:', error);
+            this.showError('Failed to load modules: ' + error.message);
+        }
+    }
+    
+    renderModuleTree() {
+        const container = document.getElementById('moduleTree');
+        if (!container) {
+            console.warn('⚠️ Module tree container not found');
+            return;
+        }
+        
+        container.innerHTML = '<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading modules...</div>';
+        
+        try {
+            if (this.moduleTree.categories) {
+                this.renderTreeNode(this.moduleTree.categories, container, '', 0);
+            } else {
+                container.innerHTML = '<div class="text-muted">No modules available</div>';
+            }
+        } catch (error) {
+            console.error('❌ Failed to render module tree:', error);
+            container.innerHTML = '<div class="text-danger">Failed to load module tree</div>';
+        }
+    }
+    
+    renderTreeNode(node, container, parentPath, depth) {
+        for (const [key, value] of Object.entries(node)) {
+            const path = parentPath ? `${parentPath}.${key}` : key;
+            
+            if (value && typeof value === 'object' && value.dotted_path) {
+                // This is a module
+                this.renderModule(value, container, depth);
+            } else if (value && typeof value === 'object') {
+                // This is a category
+                this.renderCategory(key, value, container, path, depth);
+            }
+        }
+    }
+    
+    renderCategory(name, categoryData, container, path, depth) {
+        const categoryDiv = document.createElement('div');
+        categoryDiv.className = 'tree-node category';
+        categoryDiv.style.paddingLeft = `${depth * 20}px`;
+        
+        const moduleCount = (categoryData.modules ? categoryData.modules.length : 0);
+        const subCategoryCount = (categoryData.categories ? Object.keys(categoryData.categories).length : 0);
+        const totalCount = moduleCount + subCategoryCount;
+        
+        categoryDiv.innerHTML = `
+            <span class="tree-toggle" onclick="window.app.toggleCategory('${path}')">
+                <i class="fas fa-chevron-right"></i>
+            </span>
+            <i class="fas fa-folder"></i> ${name}
+            <span class="badge bg-secondary ms-2">${totalCount}</span>
+        `;
+        
+        container.appendChild(categoryDiv);
+        
+        // Create children container
+        const childrenDiv = document.createElement('div');
+        childrenDiv.id = `category-${path}`;
+        childrenDiv.className = 'tree-children collapse';
+        
+        // Render modules in this category
+        if (categoryData.modules) {
+            categoryData.modules.forEach(module => {
+                this.renderModule(module, childrenDiv, depth + 1);
+            });
+        }
+        
+        // Render subcategories
+        if (categoryData.categories) {
+            this.renderTreeNode(categoryData.categories, childrenDiv, path, depth + 1);
+        }
+        
+        container.appendChild(childrenDiv);
+    }
+    
+    renderModule(module, container, depth) {
+        const moduleDiv = document.createElement('div');
+        moduleDiv.className = 'tree-node module';
+        moduleDiv.style.paddingLeft = `${depth * 20}px`;
+        moduleDiv.onclick = () => this.selectModule(module);
+        
+        moduleDiv.innerHTML = `
+            <i class="fas fa-file-code"></i> ${module.name}
+            <small class="text-muted ms-2">${module.type}</small>
+        `;
+        
+        container.appendChild(moduleDiv);
+    }
+    
+    selectModule(module) {
+        console.log('📝 Module selected:', module.name);
+        this.currentModule = module;
+        this.updateButtons();
+        this.showModuleDetails(module);
+        this.showMessage(`Selected module: ${module.name}`, 'info');
+    }
+    
+    showModuleDetails(module) {
+        const container = document.getElementById('moduleDetails');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <h5>${module.name}</h5>
+            <p><strong>Type:</strong> ${module.type}</p>
+            <p><strong>Description:</strong> ${module.description || 'No description available'}</p>
+            <p><strong>Path:</strong> ${module.path}</p>
+        `;
+        
+        // Show module options
+        this.showModuleOptions(module);
+    }
+    
+    showModuleOptions(module) {
+        const container = document.getElementById('moduleOptions');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        if (module.options && module.options.length > 0) {
+            module.options.forEach(option => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'mb-3';
+                optionDiv.innerHTML = `
+                    <label class="form-label">${option.name}</label>
+                    <input type="text" class="form-control" id="option_${option.name}" 
+                           value="${option.default || ''}" placeholder="${option.description || ''}">
+                    <small class="form-text text-muted">${option.description || ''}</small>
+                `;
+                container.appendChild(optionDiv);
+            });
+        } else {
+            container.innerHTML = '<p class="text-muted">No options available for this module.</p>';
+        }
+    }
+    
+    updateButtons() {
+        const runBtn = document.getElementById('runBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        
+        if (runBtn) {
+            runBtn.disabled = !this.currentModule || this.isRunning;
+        }
+        
+        if (stopBtn) {
+            stopBtn.disabled = !this.isRunning;
+        }
+    }
+    
+    updateModuleCount(count) {
+        const counter = document.getElementById('moduleCount');
+        if (counter) {
+            counter.textContent = count;
+        }
+    }
+    
+    toggleCategory(path) {
+        const element = document.getElementById(`category-${path}`);
+        if (element) {
+            element.classList.toggle('collapse');
+            
+            // Update chevron
+            const toggle = element.previousElementSibling.querySelector('.tree-toggle i');
+            if (toggle) {
+                toggle.classList.toggle('fa-chevron-right');
+                toggle.classList.toggle('fa-chevron-down');
+            }
+        }
+    }
+    
+    // Button handlers
+    async runModule() {
+        if (!this.currentModule || this.isRunning) {
+            this.showError('No module selected or already running');
+            return;
+        }
+        
+        console.log('▶️ Running module:', this.currentModule.name);
+        
+        try {
+            this.isRunning = true;
+            this.updateButtons();
+            
+            const options = this.collectModuleOptions();
+            
+            const response = await fetch('/api/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    module_path: this.currentModule.path,
+                    options: options
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showMessage('Module execution started', 'success');
+            } else {
+                throw new Error(result.error || 'Unknown error');
+            }
+        } catch (error) {
+            console.error('❌ Failed to run module:', error);
+            this.showError('Failed to run module: ' + error.message);
+            this.isRunning = false;
+            this.updateButtons();
+        }
+    }
+    
+    collectModuleOptions() {
+        const options = {};
+        const container = document.getElementById('moduleOptions');
+        if (!container) return options;
+        
+        const inputs = container.querySelectorAll('input');
+        inputs.forEach(input => {
+            const optionName = input.id.replace('option_', '');
+            options[optionName] = input.value;
+        });
+        
+        return options;
+    }
+    
+    async stopModule() {
+        console.log('🛑 Stopping module execution');
+        
+        try {
+            const response = await fetch('/api/stop', { method: 'POST' });
+            if (response.ok) {
+                this.showMessage('Execution stopped', 'warning');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to stop module:', error);
+            this.showError('Failed to stop execution');
+        }
+        
+        this.isRunning = false;
+        this.updateButtons();
+    }
+    
+    clearOutput() {
+        console.log('🧹 Clearing output');
+        const output = document.getElementById('outputContent');
+        if (output) {
+            output.innerHTML = '';
+        }
+        this.showMessage('Output cleared', 'info');
+    }
+    
+    async startAutoOwn() {
+        console.log('🤖 Starting Auto-Own');
+        
+        const targetInput = document.getElementById('autoOwnTarget');
+        if (!targetInput) {
+            this.showError('Target input not found');
+            return;
+        }
+        
+        const target = targetInput.value.trim();
+        if (!target) {
+            this.showError('Please enter a target IP address');
+            return;
+        }
+        
+        const verboseCheckbox = document.getElementById('autoOwnVerbose');
+        const debugCheckbox = document.getElementById('autoOwnDebug');
+        
+        const isVerbose = verboseCheckbox ? verboseCheckbox.checked : false;
+        const isDebug = debugCheckbox ? debugCheckbox.checked : false;
+        
+        console.log(`🎯 Auto-Own target: ${target}, verbose: ${isVerbose}, debug: ${isDebug}`);
+        
+        const btn = document.getElementById('startAutoOwnBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+        }
+        
+        try {
+            const response = await fetch('/api/auto-own/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target, verbose: isVerbose, debug: isDebug })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            if (result.success !== false) {
+                this.showMessage('Auto-Own started successfully', 'success');
+            } else {
+                throw new Error(result.error || 'Unknown error');
+            }
+        } catch (error) {
+            console.error('❌ Failed to start Auto-Own:', error);
+            this.showError('Failed to start Auto-Own: ' + error.message);
+            
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> Start Auto-Own';
+            }
+        }
+    }
+    
+    async stopAutoOwn() {
+        console.log('🛑 Stopping Auto-Own');
+        
+        try {
+            const response = await fetch('/api/auto-own/stop', { method: 'POST' });
+            if (response.ok) {
+                this.showMessage('Auto-Own stopped', 'warning');
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to stop Auto-Own:', error);
+            this.showError('Failed to stop Auto-Own');
+        }
+    }
+    
+    clearAutoOwnOutput() {
+        console.log('🧹 Clearing Auto-Own output');
+        const output = document.getElementById('autoOwnOutput');
+        if (output) {
+            output.innerHTML = '';
+        }
+        this.showMessage('Auto-Own output cleared', 'info');
+    }
+    
+    applyQuickTarget() {
+        const input = document.getElementById('quickTarget');
+        if (!input) return;
+        
+        const target = input.value.trim();
+        if (!target) {
+            this.showError('Please enter a target');
+            return;
+        }
+        
+        // Apply to current module if selected
+        if (this.currentModule) {
+            const targetOption = document.getElementById('option_target');
+            if (targetOption) {
+                targetOption.value = target;
+                this.showMessage(`Target ${target} applied to ${this.currentModule.name}`, 'success');
+            }
+        }
+        
+        // Apply to Auto-Own
+        const autoOwnTarget = document.getElementById('autoOwnTarget');
+        if (autoOwnTarget) {
+            autoOwnTarget.value = target;
+        }
+    }
+    
+    sendConsoleCommand() {
+        const input = document.getElementById('consoleInput');
+        if (!input || !this.socket) return;
+        
+        const command = input.value.trim();
+        if (!command) return;
+        
+        console.log('📟 Sending console command:', command);
+        this.socket.emit('console_command', { command });
+        input.value = '';
+    }
+    
+    clearConsole() {
+        console.log('🧹 Clearing console');
+        const output = document.getElementById('consoleOutput');
+        if (output) {
+            output.innerHTML = '';
+        }
+    }
+    
+    // Output methods
+    addOutput(line, level = 'info') {
+        const container = document.getElementById('outputContent');
+        if (!container) return;
+        
+        const div = document.createElement('div');
+        div.className = `output-line level-${level}`;
+        div.textContent = line;
+        
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    addAutoOwnOutput(line, level = 'info') {
+        const container = document.getElementById('autoOwnOutput');
+        if (!container) return;
+        
+        const div = document.createElement('div');
+        div.className = `output-line level-${level}`;
+        div.textContent = line;
+        
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+    }
+    
+    // Message methods
+    showMessage(message, type = 'info') {
+        console.log(`📢 ${type.toUpperCase()}: ${message}`);
+        
+        // You can enhance this to show toast notifications
+        const alertClass = type === 'danger' ? 'alert-danger' : 
+                          type === 'warning' ? 'alert-warning' :
+                          type === 'success' ? 'alert-success' : 'alert-info';
+        
+        // Try to show in status area
+        const status = document.getElementById('status');
+        if (status) {
+            status.innerHTML = `<div class="alert ${alertClass} alert-dismissible fade show">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>`;
+        }
+    }
+    
+    showError(message) {
+        this.showMessage(message, 'danger');
+    }
+    
+    showSuccess(message) {
+        this.showMessage(message, 'success');
+    }
+}
+
+// Initialize when ready
+console.log('🔧 Simple RouterSploit GUI script loaded');
+
+// Create global instance
+window.addEventListener('DOMContentLoaded', () => {
+    console.log('🌐 DOM ready - initializing Simple RouterSploit GUI');
+    window.app = new SimpleRouterSploitGUI();
+});
+
+// Fallback initialization
+if (document.readyState !== 'loading') {
+    console.log('🔄 Document already ready - initializing immediately');
+    setTimeout(() => {
+        if (!window.app) {
+            window.app = new SimpleRouterSploitGUI();
+        }
+    }, 100);
+} 

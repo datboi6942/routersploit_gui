@@ -77,6 +77,14 @@ class RouterSploitWebGUI:
             """Main page."""
             return render_template('index.html')
         
+        @self.app.route('/sw.js')
+        def service_worker() -> Any:
+            """Service worker for PWA functionality."""
+            from flask import send_from_directory
+            import os
+            static_dir = os.path.join(os.path.dirname(__file__), 'static')
+            return send_from_directory(static_dir, 'sw.js', mimetype='application/javascript')
+        
         @self.app.route('/api/modules')
         def get_modules() -> Any:
             """Get all modules as a tree structure."""

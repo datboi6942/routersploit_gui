@@ -1,0 +1,83 @@
+{
+  "name": "RouterSploit GUI - Cyberpunk Edition",
+  "short_name": "RouterSploit",
+  "description": "Advanced penetration testing framework with cyberpunk aesthetics",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00ffff",
+  "orientation": "landscape-primary",
+  "scope": "/",
+  "lang": "en-US",
+  "categories": ["security", "developer", "productivity"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIHZpZXdCb3g9IjAgMCA3MiA3MiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iZ3JhZDEiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdHlsZT0ic3RvcC1jb2xvcjojMDBmZmZmO3N0b3Atb3BhY2l0eToxIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0eWxlPSJzdG9wLWNvbG9yOiNmZjAwZmY7c3RvcC1vcGFjaXR5OjEiIC8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iNzIiIGhlaWdodD0iNzIiIGZpbGw9IiMwYTBhMGEiLz4KICA8cGF0aCBkPSJNMTggMTIgTDU0IDEyIEw1NCAzNiBMMzYgNjAgTDE4IDM2IFoiIGZpbGw9InVybCgjZ3JhZDEpIiBzdHJva2U9IiMwMGZmZmYiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9IjM2IiBjeT0iMzYiIHI9IjkiIGZpbGw9IiMwMGZmZmYiIG9wYWNpdHk9IjAuOCIvPgogIDx0ZXh0IHg9IjM2IiB5PSI1NCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iIzAwZmZmZiIgZm9udC1mYW1pbHk9Im1vbm9zcGFjZSIgZm9udC1zaXplPSIxMiI+UlM8L3RleHQ+Cjwvc3ZnPg==",
+      "sizes": "72x72",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQxIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZmZmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmYwMGZmO3N0b3Atb3BhY2l0eToxIiAvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIGZpbGw9IiMwYTBhMGEiLz4KICA8cGF0aCBkPSJNNDggMzIgTDE0NCAzMiBMMTQ0IDk2IEw5NiAxNjAgTDQ4IDk2IFoiIGZpbGw9InVybCgjZ3JhZDEpIiBzdHJva2U9IiMwMGZmZmYiIHN0cm9rZS13aWR0aD0iMiIvPgogIDxjaXJjbGUgY3g9Ijk2IiBjeT0iOTYiIHI9IjI0IiBmaWxsPSIjMDBmZmZmIiBvcGFjaXR5PSIwLjgiLz4KICA8dGV4dCB4PSI5NiIgeT0iMTQ0IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMDBmZmZmIiBmb250LWZhbWlseT0ibW9ub3NwYWNlIiBmb250LXNpemU9IjMyIj5SUzwvdGV4dD4KPC9zdmc+",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgdmlld0JveD0iMCAwIDUxMiA1MTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQxIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6IzAwZmZmZjtzdG9wLW9wYWNpdHk6MSIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjojZmYwMGZmO3N0b3Atb3BhY2l0eToxIiAvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjUxMiIgaGVpZ2h0PSI1MTIiIGZpbGw9IiMwYTBhMGEiLz4KICA8cGF0aCBkPSJNMTI4IDg1IEwzODQgODUgTDM4NCAyNTYgTDI1NiA0MjcgTDEyOCAyNTYgWiIgZmlsbD0idXJsKCNncmFkMSkiIHN0cm9rZT0iIzAwZmZmZiIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGNpcmNsZSBjeD0iMjU2IiBjeT0iMjU2IiByPSI2NCIgZmlsbD0iIzAwZmZmZiIgb3BhY2l0eT0iMC44Ii8+CiAgPHRleHQgeD0iMjU2IiB5PSIzODQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiMwMGZmZmYiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iODUiPlJTPC90ZXh0Pgo8L3N2Zz4=",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/screenshots/desktop-1.png",
+      "type": "image/png",
+      "sizes": "1920x1080",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/static/screenshots/mobile-1.png",
+      "type": "image/png",
+      "sizes": "390x844",
+      "form_factor": "narrow"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "GUI Interface",
+      "short_name": "GUI",
+      "description": "Access the main GUI interface",
+      "url": "/?tab=gui",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Console",
+      "short_name": "Console",
+      "description": "Access the RouterSploit console",
+      "url": "/?tab=console",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Auto-Own",
+      "short_name": "Auto-Own",
+      "description": "Access the AI-powered Auto-Own feature",
+      "url": "/?tab=auto-own",
+      "icons": [{ "src": "/static/icons/icon-96x96.png", "sizes": "96x96" }]
+    }
+  ],
+  "prefer_related_applications": false,
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+routersploit",
+      "url": "/?target=%s"
+    }
+  ]
+} 

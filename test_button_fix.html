@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RouterSploit GUI - Button Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { margin: 5px; padding: 8px 16px; cursor: pointer; }
+        #testResults { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 RouterSploit GUI Button Test</h1>
+    
+    <div class="status info">
+        <strong>📋 Test Instructions:</strong><br>
+        1. Start the RouterSploit GUI server<br>
+        2. Open this page alongside the main GUI<br>
+        3. Click the "Run Tests" button below<br>
+        4. Check the results to see which buttons work
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 Manual Button Tests</h2>
+        <p>Open the RouterSploit GUI in another tab and test these manually:</p>
+        <ul>
+            <li>✅ Stop Button - Should log "🛑 Stop button clicked"</li>
+            <li>✅ Clear Output Button - Should log "🧹 Clear output button clicked"</li>
+            <li>✅ Run Button - Should log "▶️ Run button clicked"</li>
+            <li>✅ Apply Target Button - Should log "🎯 Apply target button clicked"</li>
+            <li>✅ Auto-Own Start Button - Should log "🚀 startAutoOwn method called"</li>
+            <li>✅ Payload Select - Should log "📦 Payload selected"</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🌐 API Tests</h2>
+        <button onclick="testAPI()">🧪 Run API Tests</button>
+        <div id="apiResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>📊 Module Loading Test</h2>
+        <button onclick="testModules()">🌳 Test Module Loading</button>
+        <div id="moduleResults"></div>
+    </div>
+
+    <div id="testResults"></div>
+
+    <script>
+        let testResults = [];
+
+        function logTest(name, status, message) {
+            const result = { name, status, message, timestamp: new Date().toISOString() };
+            testResults.push(result);
+            updateTestDisplay();
+        }
+
+        function updateTestDisplay() {
+            const container = document.getElementById('testResults');
+            container.innerHTML = '<h2>🧪 Test Results</h2>' + 
+                testResults.map(test => `
+                    <div class="status ${test.status}">
+                        <strong>${test.name}:</strong> ${test.message}
+                        <small style="float: right;">${new Date(test.timestamp).toLocaleTimeString()}</small>
+                    </div>
+                `).join('');
+        }
+
+        async function testAPI() {
+            const resultsDiv = document.getElementById('apiResults');
+            resultsDiv.innerHTML = '<p>🔄 Testing API endpoints...</p>';
+
+            const tests = [
+                { name: 'Main Page', url: 'http://127.0.0.1:5000/' },
+                { name: 'Modules API', url: 'http://127.0.0.1:5000/api/modules' },
+                { name: 'Auto-Own Start', url: 'http://127.0.0.1:5000/api/auto-own/start', method: 'POST', 
+                  data: { target: '192.168.1.1', verbose: true, debug: true } }
+            ];
+
+            let html = '<h3>API Test Results:</h3>';
+
+            for (const test of tests) {
+                try {
+                    const options = {
+                        method: test.method || 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    };
+                    
+                    if (test.data) {
+                        options.body = JSON.stringify(test.data);
+                    }
+
+                    const response = await fetch(test.url, options);
+                    const status = response.ok ? 'success' : 'error';
+                    const message = `${response.status} ${response.statusText}`;
+                    
+                    html += `<div class="status ${status}">✅ ${test.name}: ${message}</div>`;
+                    logTest(`API: ${test.name}`, status, message);
+                } catch (error) {
+                    html += `<div class="status error">❌ ${test.name}: ${error.message}</div>`;
+                    logTest(`API: ${test.name}`, 'error', error.message);
+                }
+            }
+
+            resultsDiv.innerHTML = html;
+        }
+
+        async function testModules() {
+            const resultsDiv = document.getElementById('moduleResults');
+            resultsDiv.innerHTML = '<p>🔄 Testing module loading...</p>';
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/api/modules');
+                const data = await response.json();
+                
+                let html = '<h3>Module Test Results:</h3>';
+                html += `<div class="status success">✅ Module Count: ${data.count}</div>`;
+                html += `<div class="status info">📊 Top Level Categories: ${Object.keys(data.tree || {}).join(', ')}</div>`;
+                
+                // Test hierarchical structure
+                if (data.tree) {
+                    const categories = Object.keys(data.tree);
+                    for (const category of categories.slice(0, 3)) { // Test first 3 categories
+                        const categoryData = data.tree[category];
+                        if (categoryData && typeof categoryData === 'object') {
+                            const hasModules = categoryData.modules && categoryData.modules.length > 0;
+                            const hasCategories = categoryData.categories && Object.keys(categoryData.categories).length > 0;
+                            const hasSubObjects = Object.keys(categoryData).some(k => 
+                                typeof categoryData[k] === 'object' && k !== 'modules' && k !== 'categories'
+                            );
+                            
+                            html += `<div class="status info">📁 ${category}: 
+                                ${hasModules ? '✅ Has modules' : '❌ No modules'} | 
+                                ${hasCategories ? '✅ Has categories' : '❌ No categories'} | 
+                                ${hasSubObjects ? '✅ Has sub-objects' : '❌ No sub-objects'}
+                            </div>`;
+                        }
+                    }
+                }
+                
+                resultsDiv.innerHTML = html;
+                logTest('Module Loading', 'success', `Loaded ${data.count} modules`);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="status error">❌ Module loading failed: ${error.message}</div>`;
+                logTest('Module Loading', 'error', error.message);
+            }
+        }
+
+        // Auto-run API tests on page load
+        window.addEventListener('load', () => {
+            setTimeout(testAPI, 1000);
+        });
+    </script>
+</body>
+</html> 

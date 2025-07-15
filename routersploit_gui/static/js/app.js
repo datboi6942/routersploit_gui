@@ -8,6 +8,7 @@ class RouterSploitGUI {
         this.moduleTree = {};
         this.isRunning = false;
         this.selectedPayload = null;
+        this.initialized = false;
         
         // Console state
         this.consoleConnected = false;
@@ -15,28 +16,206 @@ class RouterSploitGUI {
         this.historyIndex = -1;
         this.currentPrompt = 'rsf > ';
         
+        // Effects integration (optional)
+        this.effectsManager = null;
+        
+        console.log('🚀 RouterSploit GUI constructor called');
         this.init();
     }
     
     init() {
-        // Initialize Socket.IO connection
-        this.socket = io();
-        this.setupSocketHandlers();
+        console.log('🔧 Starting RouterSploit GUI initialization...');
         
-        // Setup event handlers
-        this.setupEventHandlers();
+        // Initialize immediately without waiting for effects
+        this.initializeCore();
         
-        // Load modules
-        this.loadModules();
+        // Try to get effects manager, but don't wait for it
+        if (window.effectsManager) {
+            this.effectsManager = window.effectsManager;
+            console.log('✅ Effects manager found and linked');
+        } else {
+            console.log('⚠️ Effects manager not available, continuing without effects');
+        }
+    }
+
+    initializeCore() {
+        try {
+            console.log('🔧 Initializing core functionality...');
+            
+            // Initialize Socket.IO connection
+            this.initializeSocket();
+            
+            // Setup event handlers for all buttons
+            this.setupAllEventHandlers();
+            
+            // Load modules
+            this.loadModules();
+            
+            // Initialize console
+            this.initializeConsole();
+            
+            // Mark as initialized
+            this.initialized = true;
+            console.log('✅ Core functionality initialized successfully');
+            
+        } catch (error) {
+            console.error('❌ Failed to initialize core functionality:', error);
+            this.showCriticalError('Failed to initialize application: ' + error.message);
+        }
+    }
+
+    initializeSocket() {
+        try {
+            console.log('🔌 Initializing Socket.IO connection...');
+            this.socket = io();
+            this.setupSocketHandlers();
+            console.log('✅ Socket.IO initialized');
+        } catch (error) {
+            console.error('❌ Failed to initialize Socket.IO:', error);
+        }
+    }
+
+    setupAllEventHandlers() {
+        console.log('🔧 Setting up all event handlers...');
         
-        // Initialize console
-        this.initializeConsole();
+        // Core button handlers (with null checks)
+        this.setupCoreButtons();
+        
+        // Console event handlers
+        this.setupConsoleEventHandlers();
+        
+        // Auto-Own event handlers  
+        this.setupAutoOwnEventHandlers();
+        
+        // Tab change handlers
+        this.setupTabHandlers();
+        
+        console.log('✅ All event handlers set up');
+    }
+
+    setupCoreButtons() {
+        console.log('🔧 Setting up core buttons...');
+        
+        // Stop button
+        const stopBtn = document.getElementById('stopBtn');
+        if (stopBtn) {
+            stopBtn.addEventListener('click', () => {
+                console.log('🛑 Stop button clicked');
+                this.stopExecution();
+            });
+            console.log('✅ Stop button handler added');
+        } else {
+            console.warn('⚠️ Stop button not found');
+        }
+
+        // Clear output button
+        const clearOutputBtn = document.getElementById('clearOutputBtn');
+        if (clearOutputBtn) {
+            clearOutputBtn.addEventListener('click', () => {
+                console.log('🧹 Clear output button clicked');
+                this.clearOutput();
+            });
+            console.log('✅ Clear output button handler added');
+        } else {
+            console.warn('⚠️ Clear output button not found');
+        }
+
+        // Run button
+        const runBtn = document.getElementById('runBtn');
+        if (runBtn) {
+            runBtn.addEventListener('click', () => {
+                console.log('▶️ Run button clicked');
+                this.runModule();
+            });
+            console.log('✅ Run button handler added');
+        } else {
+            console.warn('⚠️ Run button not found');
+        }
+
+        // Apply target button
+        const applyTargetBtn = document.getElementById('applyTargetBtn');
+        if (applyTargetBtn) {
+            applyTargetBtn.addEventListener('click', () => {
+                console.log('🎯 Apply target button clicked');
+                this.applyQuickTarget();
+            });
+            console.log('✅ Apply target button handler added');
+        } else {
+            console.warn('⚠️ Apply target button not found');
+        }
+
+        // Payload selection
+        const payloadSelect = document.getElementById('payloadSelect');
+        if (payloadSelect) {
+            payloadSelect.addEventListener('change', (e) => {
+                console.log('📦 Payload selected:', e.target.value);
+                this.onPayloadSelect(e.target.value);
+            });
+            console.log('✅ Payload select handler added');
+        } else {
+            console.warn('⚠️ Payload select not found');
+        }
+
+        // Quick target input (Enter key)
+        const quickTarget = document.getElementById('quickTarget');
+        if (quickTarget) {
+            quickTarget.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    console.log('⚡ Quick target Enter key pressed');
+                    this.applyQuickTarget();
+                }
+            });
+            console.log('✅ Quick target input handler added');
+        } else {
+            console.warn('⚠️ Quick target input not found');
+        }
+    }
+
+    setupTabHandlers() {
+        console.log('🔧 Setting up tab handlers...');
+        
+        const consoleTab = document.getElementById('console-tab');
+        if (consoleTab) {
+            consoleTab.addEventListener('shown.bs.tab', () => {
+                console.log('📟 Console tab shown');
+                this.onConsoleTabShown();
+            });
+            console.log('✅ Console tab handler added');
+        }
+
+        const autoOwnTab = document.getElementById('auto-own-tab');
+        if (autoOwnTab) {
+            autoOwnTab.addEventListener('shown.bs.tab', () => {
+                console.log('🤖 Auto-own tab shown');
+                this.onAutoOwnTabShown();
+            });
+            console.log('✅ Auto-own tab handler added');
+        }
+    }
+
+    showCriticalError(message) {
+        console.error('💥 Critical Error:', message);
+        
+        // Try to show error in UI
+        const errorContainer = document.createElement('div');
+        errorContainer.className = 'alert alert-danger position-fixed top-0 start-0 w-100';
+        errorContainer.style.zIndex = '9999';
+        errorContainer.innerHTML = `
+            <h4>🚨 Application Error</h4>
+            <p>${message}</p>
+            <p><small>Check browser console for details. Try refreshing the page.</small></p>
+        `;
+        document.body.insertBefore(errorContainer, document.body.firstChild);
     }
     
     setupSocketHandlers() {
         this.socket.on('connect', () => {
             console.log('Connected to server');
-            this.updateStatus('Connected', 'secondary');
+            this.updateStatus('Connected', 'success');
+            if (this.effectsManager) {
+                this.effectsManager.updateStatus('Connected', 'success');
+                this.effectsManager.playSound('success');
+            }
         });
         
         this.socket.on('disconnect', () => {
@@ -44,14 +223,30 @@ class RouterSploitGUI {
             this.updateStatus('Disconnected', 'danger');
             this.updateConsoleStatus('Disconnected', 'danger');
             this.consoleConnected = false;
+            if (this.effectsManager) {
+                this.effectsManager.updateStatus('Disconnected', 'danger');
+                this.effectsManager.playSound('error');
+            }
         });
         
         this.socket.on('output', (data) => {
             this.addOutput(data.line, data.level);
+            if (this.effectsManager) {
+                this.effectsManager.addConsoleOutput(data.line, data.level);
+            }
         });
         
         this.socket.on('complete', (data) => {
             this.onExecutionComplete(data.success, data.error);
+            if (this.effectsManager) {
+                if (data.success) {
+                    this.effectsManager.playSound('success');
+                    this.effectsManager.updateStatus('Execution Complete', 'success');
+                } else {
+                    this.effectsManager.playSound('error');
+                    this.effectsManager.updateStatus('Execution Failed', 'danger');
+                }
+            }
         });
         
         this.socket.on('status', (data) => {
@@ -68,6 +263,10 @@ class RouterSploitGUI {
             this.updateConsolePrompt(data.prompt);
             this.addConsoleOutput(data.welcome, 'info');
             this.enableConsoleInput(true);
+            if (this.effectsManager) {
+                this.effectsManager.playSound('success');
+                this.effectsManager.typeText(document.querySelector('#consoleOutput .console-line:last-child'), data.welcome);
+            }
         });
         
         this.socket.on('console_output', (data) => {
@@ -100,55 +299,6 @@ class RouterSploitGUI {
         
         this.socket.on('auto_own_progress', (data) => {
             this.updateAutoOwnProgress(data.status, data.percentage);
-        });
-    }
-    
-    setupEventHandlers() {
-        // Stop button
-        document.getElementById('stopBtn').addEventListener('click', () => {
-            this.stopExecution();
-        });
-        
-        // Clear output button
-        document.getElementById('clearOutputBtn').addEventListener('click', () => {
-            this.clearOutput();
-        });
-        
-        // Run button
-        document.getElementById('runBtn').addEventListener('click', () => {
-            this.runModule();
-        });
-        
-        // Apply target button
-        document.getElementById('applyTargetBtn').addEventListener('click', () => {
-            this.applyQuickTarget();
-        });
-        
-        // Payload selection
-        document.getElementById('payloadSelect').addEventListener('change', (e) => {
-            this.onPayloadSelect(e.target.value);
-        });
-        
-        // Quick target input (Enter key)
-        document.getElementById('quickTarget').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.applyQuickTarget();
-            }
-        });
-        
-        // Console event handlers
-        this.setupConsoleEventHandlers();
-        
-        // Auto-Own event handlers
-        this.setupAutoOwnEventHandlers();
-        
-        // Tab change handlers
-        document.getElementById('console-tab').addEventListener('shown.bs.tab', () => {
-            this.onConsoleTabShown();
-        });
-        
-        document.getElementById('auto-own-tab').addEventListener('shown.bs.tab', () => {
-            this.onAutoOwnTabShown();
         });
     }
     
@@ -367,7 +517,26 @@ class RouterSploitGUI {
     
     async loadModules() {
         try {
-            console.log('Loading modules from API...');
+            console.log('📚 Loading modules from API...');
+            
+            // Show loading indicator
+            const treeContainer = document.getElementById('moduleTree');
+            if (treeContainer) {
+                treeContainer.innerHTML = `
+                    <div class="text-center p-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading modules...</p>
+                    </div>
+                `;
+            }
+            
+            if (this.effectsManager) {
+                this.effectsManager.startScanning();
+                this.effectsManager.updateStatus('Scanning modules...', 'info');
+            }
+            
             const response = await fetch('/api/modules');
             
             if (!response.ok) {
@@ -375,69 +544,132 @@ class RouterSploitGUI {
             }
             
             const data = await response.json();
-            console.log('Received data from API:', data);
+            console.log('📊 Received module data from API:', {
+                count: data.count,
+                hasTree: !!data.tree,
+                hasModules: !!data.modules,
+                treeKeys: data.tree ? Object.keys(data.tree) : []
+            });
             
             this.moduleTree = data.tree;
             this.modules = data.modules;
             
-            console.log('About to render tree with data:', this.moduleTree);
+            console.log('🌳 About to render module tree...');
             this.renderModuleTree();
             this.updateModuleCount(data.count);
             
-            console.log('Tree rendering completed');
+            console.log('✅ Module tree rendering completed successfully');
+            
+            if (this.effectsManager) {
+                this.effectsManager.playSound('success');
+                this.effectsManager.updateStatus(`${data.count} modules loaded`, 'success');
+            }
             
         } catch (error) {
-            console.error('Failed to load modules:', error);
+            console.error('❌ Failed to load modules:', error);
             this.showError('Failed to load modules: ' + error.message);
             
-            // Show error in tree container
+            if (this.effectsManager) {
+                this.effectsManager.playSound('error');
+                this.effectsManager.updateStatus('Module loading failed', 'danger');
+            }
+            
+            // Show detailed error in tree container
             const treeContainer = document.getElementById('moduleTree');
+            if (treeContainer) {
+                treeContainer.innerHTML = `
+                    <div class="text-center p-3 text-danger">
+                        <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                        <h5>Failed to Load Modules</h5>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <button class="btn btn-warning btn-sm" onclick="window.routerSploitGUI.loadModules()">
+                            <i class="fas fa-redo"></i> Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+    
+    renderModuleTree() {
+        const treeContainer = document.getElementById('moduleTree');
+        if (!treeContainer) {
+            console.error('❌ Module tree container not found!');
+            return;
+        }
+        
+        treeContainer.innerHTML = '';
+        
+        console.log('🌳 Rendering module tree structure:', {
+            hasTree: !!this.moduleTree,
+            treeType: typeof this.moduleTree,
+            topLevelKeys: this.moduleTree ? Object.keys(this.moduleTree) : []
+        });
+        
+        if (!this.moduleTree || Object.keys(this.moduleTree).length === 0) {
+            treeContainer.innerHTML = `
+                <div class="text-center p-3 text-warning">
+                    <i class="fas fa-info-circle fa-2x mb-3"></i>
+                    <p>No modules found</p>
+                </div>
+            `;
+            return;
+        }
+        
+        try {
+            // Handle the nested structure returned by the API
+            // The API returns { creds: {...}, exploits: {...}, etc. } at the top level
+            this.renderTreeNode(this.moduleTree, treeContainer, '', 0);
+            
+            console.log('✅ Module tree rendered successfully');
+            
+            // Initialize search functionality
+            this.initializeSearch();
+            
+        } catch (error) {
+            console.error('❌ Error rendering module tree:', error);
             treeContainer.innerHTML = `
                 <div class="text-center p-3 text-danger">
                     <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
-                    <p>Failed to load modules</p>
+                    <p>Error rendering module tree</p>
                     <small>${error.message}</small>
                 </div>
             `;
         }
     }
     
-    renderModuleTree() {
-        const treeContainer = document.getElementById('moduleTree');
-        treeContainer.innerHTML = '';
-        
-        console.log('Rendering module tree, structure:', this.moduleTree);
-        
-        // Handle the nested structure returned by the API
-        // The API returns { categories: { ... } } at the top level
-        if (this.moduleTree.categories) {
-            this.renderTreeNode(this.moduleTree.categories, treeContainer, '');
-        } else {
-            // Fallback for flat structure
-            this.renderTreeNode(this.moduleTree, treeContainer, '');
+    renderTreeNode(node, container, parentPath, depth = 0) {
+        if (!node || typeof node !== 'object') {
+            console.warn(`⚠️ Invalid node at depth ${depth}:`, node);
+            return;
         }
         
-        // Initialize search functionality
-        this.initializeSearch();
-    }
-    
-    renderTreeNode(node, container, parentPath, depth = 0) {
-        console.log(`Rendering tree node at depth ${depth}, parentPath: ${parentPath}`, node);
+        console.log(`🔄 Rendering tree node at depth ${depth}, parentPath: "${parentPath}"`);
+        console.log(`📊 Node contains ${Object.keys(node).length} items`);
         
         for (const [key, value] of Object.entries(node)) {
             const path = parentPath ? `${parentPath}.${key}` : key;
-            console.log(`Processing key: ${key}, value:`, value);
             
-            if (value && typeof value === 'object' && value.dotted_path) {
-                // This is a direct module (leaf node)
-                console.log(`Rendering module: ${key}`);
-                this.renderModule(value, container, depth);
-            } else if (value && typeof value === 'object' && (value.modules || value.categories)) {
-                // This is a category with modules and/or subcategories
-                console.log(`Rendering category: ${key} with modules: ${value.modules?.length || 0}, categories: ${Object.keys(value.categories || {}).length}`);
-                this.renderCategory(key, value, container, path, depth);
+            console.log(`🔍 Processing "${key}" of type ${typeof value}`);
+            
+            if (value && typeof value === 'object') {
+                if (value.dotted_path && value.name) {
+                    // This is a direct module (leaf node)
+                    console.log(`📦 Rendering module: ${value.name} (${value.dotted_path})`);
+                    this.renderModule(value, container, depth);
+                } else if (value.modules || value.categories || Object.keys(value).some(k => typeof value[k] === 'object')) {
+                    // This is a category with modules and/or subcategories
+                    const moduleCount = value.modules ? value.modules.length : 0;
+                    const categoryCount = value.categories ? Object.keys(value.categories).length : 0;
+                    const subObjectCount = Object.keys(value).filter(k => typeof value[k] === 'object' && k !== 'modules' && k !== 'categories').length;
+                    
+                    console.log(`📁 Rendering category: "${key}" with ${moduleCount} modules, ${categoryCount} categories, ${subObjectCount} sub-objects`);
+                    this.renderCategory(key, value, container, path, depth);
+                } else {
+                    console.log(`❓ Unknown object structure for "${key}":`, Object.keys(value));
+                }
             } else {
-                console.log(`Skipping unknown node type for key: ${key}`, value);
+                console.log(`⏭️ Skipping non-object "${key}": ${typeof value}`);
             }
         }
     }
@@ -466,22 +698,36 @@ class RouterSploitGUI {
     }
     
     renderCategory(key, categoryData, container, path, depth) {
+        // Count all items in this category
         const moduleCount = (categoryData.modules ? categoryData.modules.length : 0);
         const categoryCount = (categoryData.categories ? Object.keys(categoryData.categories).length : 0);
-        const totalCount = moduleCount + categoryCount;
+        
+        // Count sub-objects that might be categories or modules
+        const subObjectCount = Object.keys(categoryData).filter(k => 
+            typeof categoryData[k] === 'object' && 
+            k !== 'modules' && 
+            k !== 'categories'
+        ).length;
+        
+        const totalCount = moduleCount + categoryCount + subObjectCount;
+        
+        console.log(`📁 Creating category "${key}" with ${moduleCount} direct modules, ${categoryCount} subcategories, ${subObjectCount} sub-objects (total: ${totalCount})`);
         
         // Create a unique ID for this category
-        const categoryId = `category-${path.replace(/\./g, '-')}`;
+        const categoryId = `category-${path.replace(/\./g, '-')}-${Math.random().toString(36).substr(2, 9)}`;
         
         const categoryDiv = document.createElement('div');
         categoryDiv.className = 'tree-node category';
         categoryDiv.style.paddingLeft = `${depth * 20}px`;
         
+        // Capitalize category name for display
+        const displayName = key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+        
         categoryDiv.innerHTML = `
             <span class="tree-toggle" data-target="${categoryId}">
                 <i class="fas fa-chevron-right"></i>
             </span>
-            <i class="fas fa-folder"></i> ${key}
+            <i class="fas fa-folder text-warning"></i> ${displayName}
             <span class="badge bg-secondary ms-2">${totalCount}</span>
         `;
         
@@ -493,28 +739,38 @@ class RouterSploitGUI {
         
         // Add click handler for toggle
         const toggleElement = categoryDiv.querySelector('.tree-toggle');
-        toggleElement.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.toggleCategory(categoryId, toggleElement);
-        });
+        if (toggleElement) {
+            toggleElement.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleCategory(categoryId, toggleElement);
+            });
+        }
         
         container.appendChild(categoryDiv);
         container.appendChild(childContainer);
         
-        // Add modules if any
+        // Add direct modules if any
         if (categoryData.modules && categoryData.modules.length > 0) {
-            console.log(`Adding ${categoryData.modules.length} modules to category ${key}`);
+            console.log(`📦 Adding ${categoryData.modules.length} direct modules to category "${key}"`);
             categoryData.modules.forEach((module, index) => {
-                console.log(`Adding module ${index + 1}:`, module);
+                console.log(`📦 Module ${index + 1}: ${module.name || module.dotted_path}`);
                 this.renderModule(module, childContainer, depth + 1);
             });
         }
         
         // Add subcategories if any
         if (categoryData.categories && Object.keys(categoryData.categories).length > 0) {
-            console.log(`Recursing into subcategories for ${key}`);
+            console.log(`📁 Recursing into ${Object.keys(categoryData.categories).length} subcategories for "${key}"`);
             this.renderTreeNode(categoryData.categories, childContainer, path, depth + 1);
         }
+        
+        // Handle other object properties that might be categories or modules
+        Object.keys(categoryData).forEach(subKey => {
+            if (subKey !== 'modules' && subKey !== 'categories' && typeof categoryData[subKey] === 'object') {
+                console.log(`🔄 Processing sub-object "${subKey}" in category "${key}"`);
+                this.renderTreeNode({[subKey]: categoryData[subKey]}, childContainer, path, depth + 1);
+            }
+        });
     }
     
     toggleCategory(categoryId, toggleElement) {
@@ -862,13 +1118,27 @@ class RouterSploitGUI {
                 this.updateUI();
                 this.updateStatus('Running', 'success');
                 this.addOutput(`Starting ${this.currentModule.name}...`, 'info');
+                
+                if (this.effectsManager) {
+                    this.effectsManager.showLoading('Executing module...');
+                    this.effectsManager.playSound('scan');
+                    this.effectsManager.updateStatus('Executing module...', 'info');
+                }
             } else {
                 this.showError(result.error || 'Failed to start module');
+                if (this.effectsManager) {
+                    this.effectsManager.playSound('error');
+                    this.effectsManager.updateStatus('Module execution failed', 'danger');
+                }
             }
             
         } catch (error) {
             console.error('Failed to run module:', error);
             this.showError('Failed to start module execution');
+            if (this.effectsManager) {
+                this.effectsManager.playSound('error');
+                this.effectsManager.updateStatus('Module execution failed', 'danger');
+            }
         }
     }
     
@@ -917,12 +1187,24 @@ class RouterSploitGUI {
         this.isRunning = false;
         this.updateUI();
         
+        if (this.effectsManager) {
+            this.effectsManager.hideLoading();
+        }
+        
         if (success) {
             this.updateStatus('Complete', 'success');
             this.addOutput('Module execution completed successfully', 'success');
+            if (this.effectsManager) {
+                this.effectsManager.updateStatus('Execution completed', 'success');
+                this.effectsManager.playSound('success');
+            }
         } else {
             this.updateStatus('Error', 'danger');
             this.addOutput(`Module execution failed: ${error || 'Unknown error'}`, 'error');
+            if (this.effectsManager) {
+                this.effectsManager.updateStatus('Execution failed', 'danger');
+                this.effectsManager.playSound('error');
+            }
         }
     }
     
@@ -1081,66 +1363,118 @@ class RouterSploitGUI {
     
     // Auto-Own Methods
     setupAutoOwnEventHandlers() {
-        const startAutoOwnBtn = document.getElementById('startAutoOwnBtn');
-        const stopAutoOwnBtn = document.getElementById('stopAutoOwnBtn');
-        const clearAutoOwnBtn = document.getElementById('clearAutoOwnBtn');
-        const targetHistorySelect = document.getElementById('targetHistorySelect');
-        const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
-        const openaiApiKeyInput = document.getElementById('openaiApiKey');
+        console.log('Setting up Auto-Own event handlers...');
+        
+        // Use a timeout to ensure DOM is fully loaded
+        setTimeout(() => {
+            const startAutoOwnBtn = document.getElementById('startAutoOwnBtn');
+            const stopAutoOwnBtn = document.getElementById('stopAutoOwnBtn');
+            const clearAutoOwnBtn = document.getElementById('clearAutoOwnBtn');
+            const targetHistorySelect = document.getElementById('targetHistorySelect');
+            const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+            const openaiApiKeyInput = document.getElementById('openaiApiKey');
 
-        // Start auto-own button
-        startAutoOwnBtn.addEventListener('click', () => {
-            this.startAutoOwn();
-        });
+            console.log('Auto-Own elements found:', {
+                startAutoOwnBtn: !!startAutoOwnBtn,
+                stopAutoOwnBtn: !!stopAutoOwnBtn,
+                clearAutoOwnBtn: !!clearAutoOwnBtn,
+                targetHistorySelect: !!targetHistorySelect,
+                saveApiKeyBtn: !!saveApiKeyBtn,
+                openaiApiKeyInput: !!openaiApiKeyInput
+            });
 
-        // Stop auto-own button
-        stopAutoOwnBtn.addEventListener('click', () => {
-            this.stopAutoOwn();
-        });
-
-        // Clear auto-own output button
-        clearAutoOwnBtn.addEventListener('click', () => {
-            this.clearAutoOwnOutput();
-        });
-
-        // Save API key button
-        saveApiKeyBtn.addEventListener('click', async () => {
-            const apiKey = openaiApiKeyInput.value.trim();
-            if (!apiKey) {
-                this.showError('Please enter your OpenAI API key');
+            // Check if elements exist before adding event listeners
+            if (!startAutoOwnBtn) {
+                console.error('startAutoOwnBtn element not found');
                 return;
             }
-            try {
-                const response = await fetch('/api/auto-own/set-api-key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ api_key: apiKey })
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    this.showSuccess('API key saved successfully');
-                    openaiApiKeyInput.value = '';
-                } else {
-                    this.showError(data.error || 'Failed to save API key');
-                }
-            } catch (error) {
-                this.showError('Failed to save API key');
-            }
-        });
 
-        // Target history selection
-        targetHistorySelect.addEventListener('change', (e) => {
-            if (e.target.value) {
-                document.getElementById('autoOwnTarget').value = e.target.value;
-            }
-        });
-
-        // Auto-own target input (Enter key)
-        document.getElementById('autoOwnTarget').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
+            // Start auto-own button
+            startAutoOwnBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('Start Auto-Own button clicked');
                 this.startAutoOwn();
+            });
+
+            // Also add event listener for Enter key on target input
+            const targetInput = document.getElementById('autoOwnTarget');
+            if (targetInput) {
+                targetInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        console.log('Enter key pressed in target input');
+                        this.startAutoOwn();
+                    }
+                });
             }
-        });
+
+            // Stop auto-own button
+            if (stopAutoOwnBtn) {
+                stopAutoOwnBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.stopAutoOwn();
+                });
+            }
+
+            // Clear auto-own output button
+            if (clearAutoOwnBtn) {
+                clearAutoOwnBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.clearAutoOwnOutput();
+                });
+            }
+
+            // Save API key button
+            if (saveApiKeyBtn) {
+                saveApiKeyBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                        const apiKey = openaiApiKeyInput.value.trim();
+                        if (!apiKey) {
+                            this.showError('Please enter a valid OpenAI API key');
+                            return;
+                        }
+                        
+                        // Save to localStorage
+                        localStorage.setItem('openai_api_key', apiKey);
+                        this.showSuccess('API key saved successfully');
+                        
+                        console.log('API key saved');
+                    } catch (error) {
+                        console.error('Error saving API key:', error);
+                        this.showError('Failed to save API key');
+                    }
+                });
+            }
+
+            // Target history select
+            if (targetHistorySelect) {
+                targetHistorySelect.addEventListener('change', (e) => {
+                    const selectedTarget = e.target.value;
+                    if (selectedTarget) {
+                        const targetInput = document.getElementById('autoOwnTarget');
+                        if (targetInput) {
+                            targetInput.value = selectedTarget;
+                        }
+                    }
+                });
+            }
+
+            // Load saved API key
+            const savedApiKey = localStorage.getItem('openai_api_key');
+            if (savedApiKey && openaiApiKeyInput) {
+                openaiApiKeyInput.value = savedApiKey;
+            }
+
+            // Load target history
+            this.loadAutoOwnTargets();
+            
+            console.log('Auto-Own event handlers setup completed');
+        }, 100);
     }
     
     onAutoOwnTabShown() {
@@ -1150,67 +1484,232 @@ class RouterSploitGUI {
     
     async loadAutoOwnTargets() {
         try {
-            const response = await fetch('/api/auto-own/targets');
-            const data = await response.json();
+            const targets = JSON.parse(localStorage.getItem('auto_own_targets') || '[]');
             
             const select = document.getElementById('targetHistorySelect');
-            select.innerHTML = '<option value="">Select from history...</option>';
-            
-            data.targets.forEach(target => {
-                const option = document.createElement('option');
-                option.value = target;
-                option.textContent = target;
-                select.appendChild(option);
-            });
+            if (select) {
+                select.innerHTML = '<option value="">Select from history...</option>';
+                
+                targets.forEach(target => {
+                    const option = document.createElement('option');
+                    option.value = target;
+                    option.textContent = target;
+                    select.appendChild(option);
+                });
+            }
         } catch (error) {
             console.error('Failed to load auto-own targets:', error);
         }
     }
     
     async startAutoOwn() {
+        console.log('🚀 startAutoOwn method called');
+        
+        // Get all required elements
         const targetInput = document.getElementById('autoOwnTarget');
         const verboseCheckbox = document.getElementById('autoOwnVerbose');
         const debugCheckbox = document.getElementById('autoOwnDebug');
-        const target = targetInput.value.trim();
-        const isVerbose = verboseCheckbox.checked;
-        const isDebug = debugCheckbox.checked;
-
-        if (!target) {
-            this.showError("Please enter a target IP address or hostname.");
+        const startBtn = document.getElementById('startAutoOwnBtn');
+        
+        console.log('Elements found:', {
+            targetInput: !!targetInput,
+            verboseCheckbox: !!verboseCheckbox,
+            debugCheckbox: !!debugCheckbox,
+            startBtn: !!startBtn
+        });
+        
+        if (!targetInput) {
+            console.error('❌ autoOwnTarget input not found');
+            this.showError('Auto-Own target input not found');
             return;
         }
         
+        const target = targetInput.value.trim();
+        const isVerbose = verboseCheckbox ? verboseCheckbox.checked : false;
+        const isDebug = debugCheckbox ? debugCheckbox.checked : false;
+        
+        console.log(`📊 Auto-Own parameters: target="${target}", verbose=${isVerbose}, debug=${isDebug}`);
+
+        if (!target) {
+            console.warn('⚠️ No target specified');
+            this.showError("Please enter a target IP address or hostname.");
+            return;
+        }
+
+        // Validate target format (basic check)
+        const ipPattern = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+        const hostnamePattern = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+        
+        if (!ipPattern.test(target) && !hostnamePattern.test(target)) {
+            console.warn('⚠️ Invalid target format');
+            this.showError("Please enter a valid IP address or hostname.");
+            return;
+        }
+        
+        // Disable start button to prevent multiple clicks
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+        }
+        
+        // Clear and setup output
         this.clearAutoOwnOutput();
-        this.addAutoOwnOutput(`Starting Auto-Own process for target: ${target}`, 'info');
+        this.addAutoOwnOutput(`🎯 Starting Auto-Own process for target: ${target}`, 'info');
+        
+        if (isVerbose) {
+            this.addAutoOwnOutput(`📢 Verbose mode enabled - showing detailed output`, 'info');
+        }
+        
         if (isDebug) {
             this.addAutoOwnOutput(`🐛 Debug mode enabled - showing internal agent operations`, 'warning');
         }
+        
+        // Show progress and update UI
         this.enableAutoOwnControls(true);
         this.showAutoOwnProgress();
-        this.updateAutoOwnProgress('Initializing', 0);
+        this.updateAutoOwnProgress('Initializing Auto-Own Agent', 10);
 
         try {
+            console.log('📡 Sending start request to server...');
+            
             const response = await fetch('/api/auto-own/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target, verbose: isVerbose, debug: isDebug }),
             });
 
-            const result = await response.json();
+            console.log('📡 Server response status:', response.status);
 
-            if (response.ok) {
-                this.showSuccess('Auto-Own process started');
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log('📡 Server response data:', result);
+
+            if (result.success !== false) {
+                console.log('✅ Auto-Own process started successfully');
+                this.showSuccess('Auto-Own process started successfully');
                 this.updateAutoOwnStatus('Running', 'warning');
-                this.enableAutoOwnControls(true);
-                this.showAutoOwnProgress();
-                this.clearAutoOwnOutput();
-                this.addAutoOwnOutput(`Starting Auto-Own process for target: ${target}`, 'info');
+                this.updateAutoOwnProgress('Auto-Own Agent Running', 20);
+                
+                // Save target to history
+                this.saveAutoOwnTarget(target);
+                
+                // Start polling for updates
+                this.startAutoOwnPolling();
             } else {
-                this.showError(result.error || 'Failed to start Auto-Own process');
+                throw new Error(result.error || 'Unknown error from server');
             }
         } catch (error) {
-            console.error('Failed to start auto-own:', error);
-            this.showError('Failed to start Auto-Own process');
+            console.error('❌ Failed to start auto-own:', error);
+            this.showError(`Failed to start Auto-Own process: ${error.message}`);
+            this.updateAutoOwnStatus('Error', 'danger');
+            this.hideAutoOwnProgress();
+            this.enableAutoOwnControls(false);
+        } finally {
+            // Re-enable start button
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-play"></i> Start Auto-Own';
+            }
+        }
+    }
+    
+    saveAutoOwnTarget(target) {
+        try {
+            let targets = JSON.parse(localStorage.getItem('auto_own_targets') || '[]');
+            if (!targets.includes(target)) {
+                targets.unshift(target);
+                // Keep only last 10 targets
+                targets = targets.slice(0, 10);
+                localStorage.setItem('auto_own_targets', JSON.stringify(targets));
+                this.loadAutoOwnTargets();
+            }
+        } catch (error) {
+            console.error('Failed to save target to history:', error);
+        }
+    }
+    
+    startAutoOwnPolling() {
+        if (this.autoOwnPollingInterval) {
+            clearInterval(this.autoOwnPollingInterval);
+        }
+        
+        this.autoOwnPollingInterval = setInterval(async () => {
+            try {
+                const response = await fetch('/api/auto-own/status');
+                const data = await response.json();
+                
+                if (data.status === 'completed') {
+                    this.updateAutoOwnStatus('Completed', 'success');
+                    this.updateAutoOwnProgress('Auto-Own Completed', 100);
+                    this.enableAutoOwnControls(false);
+                    clearInterval(this.autoOwnPollingInterval);
+                } else if (data.status === 'error') {
+                    this.updateAutoOwnStatus('Error', 'danger');
+                    this.enableAutoOwnControls(false);
+                    clearInterval(this.autoOwnPollingInterval);
+                } else if (data.status === 'running') {
+                    this.updateAutoOwnProgress(data.current_step || 'Processing', data.progress || 20);
+                }
+                
+                // Update output if there's new data
+                if (data.output) {
+                    this.addAutoOwnOutput(data.output, 'info');
+                }
+            } catch (error) {
+                console.error('Error polling auto-own status:', error);
+            }
+        }, 2000); // Poll every 2 seconds
+    }
+    
+    updateAutoOwnStatus(status, variant) {
+        const statusElement = document.getElementById('autoOwnStatus');
+        if (statusElement) {
+            statusElement.textContent = status;
+            statusElement.className = `badge bg-${variant}`;
+        }
+    }
+    
+    updateAutoOwnProgress(message, percentage) {
+        const progressBar = document.getElementById('autoOwnProgressBar');
+        const progressText = document.getElementById('autoOwnProgressText');
+        
+        if (progressBar) {
+            progressBar.style.width = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', percentage);
+        }
+        
+        if (progressText) {
+            progressText.textContent = message;
+        }
+    }
+    
+    showAutoOwnProgress() {
+        const progressContainer = document.getElementById('autoOwnProgress');
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+        }
+    }
+    
+    hideAutoOwnProgress() {
+        const progressContainer = document.getElementById('autoOwnProgress');
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+    }
+    
+    enableAutoOwnControls(running) {
+        const startBtn = document.getElementById('startAutoOwnBtn');
+        const stopBtn = document.getElementById('stopAutoOwnBtn');
+        
+        if (startBtn) {
+            startBtn.disabled = running;
+        }
+        
+        if (stopBtn) {
+            stopBtn.disabled = !running;
         }
     }
     
@@ -1345,5 +1844,48 @@ class RouterSploitGUI {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    window.routerSploitGUI = new RouterSploitGUI();
-}); 
+    console.log('🌐 DOM Content Loaded - Starting RouterSploit GUI');
+    
+    try {
+        window.routerSploitGUI = new RouterSploitGUI();
+        window.app = window.routerSploitGUI; // Backward compatibility alias
+        console.log('✅ RouterSploit GUI initialized successfully');
+    } catch (error) {
+        console.error('❌ Failed to initialize RouterSploit GUI:', error);
+        
+        // Show user-friendly error
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger m-3';
+        errorDiv.innerHTML = `
+            <h4>🚨 Application Failed to Start</h4>
+            <p>RouterSploit GUI failed to initialize properly.</p>
+            <p><strong>Error:</strong> ${error.message}</p>
+            <p><small>Please refresh the page or check browser console for details.</small></p>
+            <button class="btn btn-warning" onclick="location.reload()">🔄 Reload Page</button>
+        `;
+        
+        const container = document.querySelector('.container-fluid') || document.body;
+        container.insertBefore(errorDiv, container.firstChild);
+    }
+});
+
+// Fallback initialization if DOMContentLoaded already fired
+if (document.readyState === 'loading') {
+    // Still loading, DOMContentLoaded will fire
+    console.log('📄 Document still loading, waiting for DOMContentLoaded');
+} else {
+    // DOM is already ready
+    console.log('📄 DOM already ready, initializing immediately');
+    setTimeout(() => {
+        if (!window.routerSploitGUI) {
+            console.log('🔄 Fallback initialization triggered');
+            try {
+                window.routerSploitGUI = new RouterSploitGUI();
+                window.app = window.routerSploitGUI;
+                console.log('✅ Fallback initialization successful');
+            } catch (error) {
+                console.error('❌ Fallback initialization failed:', error);
+            }
+        }
+    }, 100);
+} 

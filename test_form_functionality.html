@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Input Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { padding: 10px 20px; margin: 5px; }
+        input, textarea { margin: 5px; padding: 5px; }
+        .result { margin: 10px 0; padding: 10px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>RouterSploit GUI Form Input Test</h1>
+    <p>This page tests if basic form inputs are working properly.</p>
+
+    <div class="test-section">
+        <h2>API Key Input Test</h2>
+        <input type="password" id="apiKeyTest" placeholder="Enter OpenAI API Key">
+        <button onclick="testApiKey()">Save API Key</button>
+        <div id="apiKeyResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Target Input Test</h2>
+        <input type="text" id="targetTest" placeholder="Enter target IP (e.g., 192.168.1.1)">
+        <button onclick="testTarget()">Set Target</button>
+        <div id="targetResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Button Click Test</h2>
+        <button onclick="testButton()">Test Button</button>
+        <div id="buttonResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>API Test</h2>
+        <button onclick="testModulesAPI()">Test Modules API</button>
+        <button onclick="testAutoOwnAPI()">Test Auto-Own API</button>
+        <div id="apiResult" class="result"></div>
+    </div>
+
+    <script>
+        function testApiKey() {
+            const apiKey = document.getElementById('apiKeyTest').value;
+            const result = document.getElementById('apiKeyResult');
+            
+            if (apiKey.trim()) {
+                localStorage.setItem('openai_api_key', apiKey);
+                result.innerHTML = `<span style="color: green;">✅ API Key saved: ${apiKey.substring(0, 10)}...</span>`;
+            } else {
+                result.innerHTML = `<span style="color: red;">❌ Please enter an API key</span>`;
+            }
+        }
+
+        function testTarget() {
+            const target = document.getElementById('targetTest').value;
+            const result = document.getElementById('targetResult');
+            
+            if (target.trim()) {
+                result.innerHTML = `<span style="color: green;">✅ Target set: ${target}</span>`;
+            } else {
+                result.innerHTML = `<span style="color: red;">❌ Please enter a target</span>`;
+            }
+        }
+
+        function testButton() {
+            const result = document.getElementById('buttonResult');
+            result.innerHTML = `<span style="color: green;">✅ Button click works! Time: ${new Date().toLocaleTimeString()}</span>`;
+        }
+
+        async function testModulesAPI() {
+            const result = document.getElementById('apiResult');
+            result.innerHTML = `<span style="color: blue;">⏳ Testing modules API...</span>`;
+            
+            try {
+                const response = await fetch('/api/modules');
+                const data = await response.json();
+                result.innerHTML = `<span style="color: green;">✅ Modules API works! Found ${data.count} modules</span>`;
+            } catch (error) {
+                result.innerHTML = `<span style="color: red;">❌ Modules API failed: ${error.message}</span>`;
+            }
+        }
+
+        async function testAutoOwnAPI() {
+            const result = document.getElementById('apiResult');
+            result.innerHTML = `<span style="color: blue;">⏳ Testing Auto-Own API...</span>`;
+            
+            try {
+                const response = await fetch('/api/auto-own/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ target: '192.168.1.1', verbose: false, debug: false })
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.innerHTML = `<span style="color: green;">✅ Auto-Own API responds (but may need API key configured)</span>`;
+                } else {
+                    result.innerHTML = `<span style="color: orange;">⚠️ Auto-Own API responds with error (expected): ${data.error}</span>`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span style="color: red;">❌ Auto-Own API failed: ${error.message}</span>`;
+            }
+        }
+
+        // Test on page load
+        window.addEventListener('load', function() {
+            console.log('Test page loaded successfully');
+            const result = document.getElementById('buttonResult');
+            result.innerHTML = `<span style="color: blue;">ℹ️ Page loaded at ${new Date().toLocaleTimeString()}</span>`;
+        });
+    </script>
+</body>
+</html> 
