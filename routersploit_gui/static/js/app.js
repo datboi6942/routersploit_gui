@@ -42,6 +42,9 @@ class RouterSploitGUI {
         try {
             console.log('🔧 Initializing core functionality...');
             
+            // Test basic DOM access first
+            this.testDOMAccess();
+            
             // Initialize Socket.IO connection
             this.initializeSocket();
             
@@ -61,6 +64,37 @@ class RouterSploitGUI {
         } catch (error) {
             console.error('❌ Failed to initialize core functionality:', error);
             this.showCriticalError('Failed to initialize application: ' + error.message);
+        }
+    }
+    
+    testDOMAccess() {
+        console.log('🧪 Testing DOM access...');
+        
+        const elements = {
+            'startAutoOwnBtn': document.getElementById('startAutoOwnBtn'),
+            'autoOwnTarget': document.getElementById('autoOwnTarget'),
+            'openaiApiKey': document.getElementById('openaiApiKey'),
+            'saveApiKeyBtn': document.getElementById('saveApiKeyBtn'),
+            'moduleTree': document.getElementById('moduleTree'),
+            'runBtn': document.getElementById('runBtn'),
+            'statusBadge': document.getElementById('statusBadge'),
+            'moduleInfo': document.getElementById('moduleInfo'),
+            'noModuleSelected': document.getElementById('noModuleSelected')
+        };
+        
+        console.log('🔍 Element availability:', elements);
+        
+        let missing = [];
+        for (const [name, element] of Object.entries(elements)) {
+            if (!element) {
+                missing.push(name);
+            }
+        }
+        
+        if (missing.length > 0) {
+            console.warn('⚠️ Missing elements:', missing);
+        } else {
+            console.log('✅ All required elements found');
         }
     }
 
@@ -254,23 +288,21 @@ class RouterSploitGUI {
             this.updateUI();
         });
         
-        // Console event handlers
+        // --- START CONSOLE EVENT HANDLER REPLACEMENT ---
+        // Replacing old handlers with more robust ones from console-debug.js
+
         this.socket.on('console_connected', (data) => {
-            console.log('Console connected');
+            console.log('🎉 Console connected!', data);
             this.consoleConnected = true;
-            this.currentPrompt = data.prompt;
+            this.currentPrompt = data.prompt || 'rsf > ';
             this.updateConsoleStatus('Connected', 'success');
-            this.updateConsolePrompt(data.prompt);
-            this.addConsoleOutput(data.welcome, 'info');
+            this.updateConsolePrompt(this.currentPrompt);
+            this.addConsoleOutput(data.welcome || 'Console connected successfully!', 'success');
             this.enableConsoleInput(true);
-            if (this.effectsManager) {
-                this.effectsManager.playSound('success');
-                this.effectsManager.typeText(document.querySelector('#consoleOutput .console-line:last-child'), data.welcome);
-            }
         });
         
         this.socket.on('console_output', (data) => {
-            this.addConsoleOutput(data.data, data.level);
+            this.addConsoleOutput(data.data, data.level || 'info');
         });
         
         this.socket.on('console_prompt', (data) => {
@@ -286,7 +318,9 @@ class RouterSploitGUI {
             this.addConsoleOutput('Console session ended.', 'warning');
             this.enableConsoleInput(false);
             this.updateConsoleStatus('Disconnected', 'secondary');
+            this.consoleConnected = false;
         });
+        // --- END CONSOLE EVENT HANDLER REPLACEMENT ---
         
         // Auto-Own event handlers
         this.socket.on('auto_own_output', (data) => {
@@ -320,9 +354,28 @@ class RouterSploitGUI {
     }
     
     setupConsoleEventHandlers() {
+        console.log('🔧 Setting up console event handlers...');
+        
         const consoleInput = document.getElementById('consoleInput');
         const consoleSendBtn = document.getElementById('consoleSendBtn');
         const clearConsoleBtn = document.getElementById('clearConsoleBtn');
+        
+        if (!consoleInput) {
+            console.error('❌ Console input element not found!');
+            return;
+        }
+        
+        if (!consoleSendBtn) {
+            console.error('❌ Console send button not found!');
+            return;
+        }
+        
+        if (!clearConsoleBtn) {
+            console.error('❌ Clear console button not found!');
+            return;
+        }
+        
+        console.log('✅ All console elements found');
         
         // Console input handling
         consoleInput.addEventListener('keydown', (e) => {
@@ -331,17 +384,20 @@ class RouterSploitGUI {
         
         consoleInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
+                console.log('🔑 Enter key pressed in console');
                 this.sendConsoleCommand();
             }
         });
         
         // Send button
         consoleSendBtn.addEventListener('click', () => {
+            console.log('🖱️ Console send button clicked');
             this.sendConsoleCommand();
         });
         
         // Clear console button
         clearConsoleBtn.addEventListener('click', () => {
+            console.log('🧹 Clear console button clicked');
             this.clearConsole();
         });
         
@@ -352,35 +408,59 @@ class RouterSploitGUI {
                 this.handleTabCompletion();
             }
         });
+        
+        console.log('✅ Console event handlers set up successfully');
     }
     
+    // --- START CONSOLE INITIALIZATION REPLACEMENT ---
+    // Replacing complex retry logic with a more direct approach
     initializeConsole() {
+        console.log('🔧 Initializing console...');
         this.updateConsoleStatus('Connecting...', 'warning');
-        // Connect to console when the page loads
-        // Wait a bit for the main socket connection to be established
-        setTimeout(() => {
-            if (this.socket && this.socket.connected) {
-                this.connectConsole();
-            }
-        }, 1000);
-    }
-    
-    connectConsole() {
+        
+        // Connection will be attempted when the socket connects or the tab is shown.
+        // This avoids race conditions.
         if (this.socket && this.socket.connected) {
-            this.socket.emit('console_connect');
-        }
-    }
-    
-    onConsoleTabShown() {
-        // When console tab is shown, ensure we're connected
-        if (!this.consoleConnected && this.socket && this.socket.connected) {
             this.connectConsole();
         }
+    }
+
+    connectConsole() {
+        if (this.socket && this.socket.connected) {
+            if (!this.consoleConnected) {
+                console.log('📡 Emitting console_connect event...');
+                this.socket.emit('console_connect');
+            } else {
+                console.log('✅ Console is already connected.');
+            }
+        } else {
+            console.error('❌ Cannot connect console: socket not available.');
+            this.updateConsoleStatus('Socket Down', 'danger');
+        }
+    }
+    // --- END CONSOLE INITIALIZATION REPLACEMENT ---
+
+    onConsoleTabShown() {
+        console.log('📟 Console tab shown');
+        
+        // When console tab is shown, ensure we're connected
+        this.connectConsole();
         
         // Focus the console input
         const consoleInput = document.getElementById('consoleInput');
         if (consoleInput && !consoleInput.disabled) {
             consoleInput.focus();
+        } else {
+             // If input is still disabled after a moment, it means connection failed.
+             // Enable it for offline mode.
+            setTimeout(() => {
+                if (consoleInput && consoleInput.disabled) {
+                    console.warn('⚠️ Console not connected, enabling input for offline mode.');
+                    this.enableConsoleInput(true);
+                    this.updateConsoleStatus('Offline Mode', 'warning');
+                    this.addConsoleOutput('Backend not connected. Limited offline commands available.', 'warning');
+                }
+            }, 2000);
         }
     }
     
@@ -388,7 +468,7 @@ class RouterSploitGUI {
         const consoleInput = document.getElementById('consoleInput');
         const command = consoleInput.value.trim();
         
-        if (!command || !this.consoleConnected) {
+        if (!command) {
             return;
         }
         
@@ -402,8 +482,80 @@ class RouterSploitGUI {
         // Clear input
         consoleInput.value = '';
         
-        // Send command to server
-        this.socket.emit('console_command', { command: command });
+        if (this.consoleConnected && this.socket && this.socket.connected) {
+            // Send command to server if connected
+            console.log('📡 Sending command to backend:', command);
+            this.socket.emit('console_command', { command: command });
+        } else {
+            // Handle command locally if backend is down
+            console.log('⚠️ Backend not available, handling command locally:', command);
+            this.handleOfflineCommand(command);
+        }
+    }
+    
+    handleOfflineCommand(command) {
+        let response = '';
+        
+        switch(command.toLowerCase()) {
+            case 'help':
+                response = `RouterSploit Console (Offline Mode)
+                
+Available commands:
+- help          Show this help
+- status        Show console status
+- clear         Clear console output
+- history       Show command history
+- test          Test console functionality
+
+Note: Backend connection failed. Only basic commands available.
+To fix this, restart the RouterSploit application.`;
+                break;
+                
+            case 'status':
+                response = `Console Status (Offline Mode):
+- Backend connection: ❌ FAILED
+- Frontend: ✅ Working
+- Commands in history: ${this.commandHistory.length}
+- Socket.IO connected: ${this.socket && this.socket.connected ? '✅ Yes' : '❌ No'}
+
+The RouterSploit backend appears to be down or misconfigured.`;
+                break;
+                
+            case 'clear':
+                this.clearConsole();
+                return;
+                
+            case 'history':
+                if (this.commandHistory.length > 0) {
+                    response = `Command History (last 10):
+${this.commandHistory.slice(-10).map((cmd, i) => `${i + 1}. ${cmd}`).join('\n')}`;
+                } else {
+                    response = 'No commands in history.';
+                }
+                break;
+                
+            case 'test':
+                response = `🧪 Console Test Results:
+✅ Frontend JavaScript: Working
+✅ Console input: Functional  
+✅ Command processing: Local mode
+✅ Command history: Working
+❌ Backend connection: Failed
+❌ RouterSploit modules: Not available
+
+The console frontend is working, but backend connection failed.`;
+                break;
+                
+            default:
+                response = `Command "${command}" not recognized in offline mode.
+The RouterSploit backend is not available.
+Type 'help' for available offline commands.`;
+        }
+        
+        // Add response to output
+        setTimeout(() => {
+            this.addConsoleOutput(response, 'info');
+        }, 100);
     }
     
     handleConsoleKeydown(e) {
@@ -791,21 +943,32 @@ class RouterSploitGUI {
     }
     
     toggleCategory(categoryId, toggleElement) {
+        console.log(`🔄 Toggle category: ${categoryId}`);
+        
         const container = document.getElementById(categoryId);
         const chevron = toggleElement.querySelector('i');
         const categoryNode = toggleElement.closest('.tree-node.category');
         
+        if (!container) {
+            console.warn(`⚠️ Category container not found: ${categoryId}`);
+            return;
+        }
+        
         if (container.style.display === 'none') {
             // Expand
+            console.log(`📁 Expanding category: ${categoryId}`);
             container.style.display = 'block';
             chevron.className = 'fas fa-chevron-down';
             categoryNode.classList.add('expanded');
         } else {
             // Collapse
+            console.log(`📁 Collapsing category: ${categoryId}`);
             container.style.display = 'none';
             chevron.className = 'fas fa-chevron-right';
             categoryNode.classList.remove('expanded');
         }
+        
+        console.log(`✅ Category toggle completed for: ${categoryId}`);
     }
     
     getCategoryBadge(category) {

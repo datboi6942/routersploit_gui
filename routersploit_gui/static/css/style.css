@@ -23,7 +23,7 @@
     --border-neon: 2px solid var(--primary-neon);
     --border-secondary: 1px solid var(--secondary-neon);
     
-    --shadow-neon: 0 0 20px var(--primary-neon), 0 0 40px var(--primary-neon), 0 0 60px var(--primary-neon);
+    --shadow-neon: -2px 1px 0px var(--danger-neon), 0 0 20px var(--primary-neon), 0 0 40px var(--primary-neon), 0 0 60px var(--primary-neon);
     --shadow-secondary: 0 0 15px var(--secondary-neon), 0 0 30px var(--secondary-neon);
     --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.6);
     
@@ -115,10 +115,12 @@ body {
     }
 }
 
-/* Glitch Effect */
+/* Enhanced Glitch/Ghosting Effect */
 .glitch {
     position: relative;
     display: inline-block;
+    margin: 0;
+    padding: 0;
 }
 
 .glitch::before,
@@ -127,56 +129,47 @@ body {
     position: absolute;
     top: 0;
     left: 0;
+    margin: 0;
+    padding: 0;
     width: 100%;
     height: 100%;
-    background: var(--bg-primary);
+    pointer-events: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
 }
 
 .glitch::before {
-    animation: glitch-1 0.5s infinite;
     color: var(--danger-neon);
     z-index: -1;
+    transform: translate(-1px, 0px);
+    opacity: 0.7;
 }
 
 .glitch::after {
-    animation: glitch-2 0.5s infinite;
-    color: var(--primary-neon);
+    color: var(--secondary-neon);
     z-index: -2;
-}
-
-@keyframes glitch-1 {
-    0%, 14%, 15%, 49%, 50%, 99%, 100% {
-        transform: translate(0);
-    }
-    15%, 49% {
-        transform: translate(-2px, 2px);
-    }
-}
-
-@keyframes glitch-2 {
-    0%, 20%, 21%, 62%, 63%, 99%, 100% {
-        transform: translate(0);
-    }
-    21%, 62% {
-        transform: translate(2px, -2px);
-    }
+    transform: translate(-2px, 0px);
+    opacity: 0.5;
 }
 
 /* Neon Glow Animation */
 @keyframes neon-glow {
     0%, 100% {
         text-shadow: 
+            -1px -1px 1px var(--danger-neon),
             0 0 5px var(--primary-neon),
             0 0 10px var(--primary-neon),
-            0 0 15px var(--primary-neon),
-            0 0 20px var(--primary-neon);
+            0 0 15px var(--primary-neon);
     }
     50% {
         text-shadow: 
+            -1px -1px 1px var(--danger-neon),
             0 0 10px var(--primary-neon),
             0 0 20px var(--primary-neon),
-            0 0 30px var(--primary-neon),
-            0 0 40px var(--primary-neon);
+            0 0 30px var(--primary-neon);
     }
 }
 
@@ -209,7 +202,6 @@ body {
     font-weight: 900;
     font-size: 1.8rem;
     color: var(--primary-neon) !important;
-    text-shadow: var(--shadow-neon);
     animation: neon-glow 2s ease-in-out infinite alternate;
 }
 

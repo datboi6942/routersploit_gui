@@ -1,17 +1,14 @@
 // RouterSploit GUI - Service Worker
 // Provides offline functionality and caching for PWA
 
-const CACHE_NAME = 'routersploit-gui-v1';
+const CACHE_NAME = 'routersploit-gui-cache-v3';
 const urlsToCache = [
     '/',
     '/static/css/style.css',
-    '/static/js/debug-app.js',
-    '/static/js/sound-generator.js',
+    '/static/js/app.js',
     '/static/manifest.json',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
-    'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js'
+    '/static/images/icon-192x192.png',
+    '/static/images/icon-512x512.png'
 ];
 
 // Helper function to check if request can be cached

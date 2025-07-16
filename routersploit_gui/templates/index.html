@@ -6,7 +6,7 @@
     <title>RouterSploit GUI - Cyberpunk Edition</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20250115-ghostfix" rel="stylesheet">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="theme-color" content="#0a0a0a">
     <meta name="description" content="RouterSploit GUI - Advanced penetration testing framework with cyberpunk aesthetics">
@@ -25,8 +25,9 @@
         <!-- Header -->
         <nav class="navbar navbar-dark mb-3 glass">
             <div class="container-fluid">
-                <span class="navbar-brand mb-0 h1 glitch" data-text="RouterSploit GUI">
-                    <i class="fas fa-shield-alt"></i> RouterSploit GUI
+                <span class="navbar-brand mb-0 h1">
+                    <i class="fas fa-shield-alt"></i> 
+                    <span class="glitch" data-text="RouterSploit GUI">RouterSploit GUI</span>
                 </span>
                 <div class="d-flex align-items-center">
                     <!-- Sound Toggle -->
@@ -230,6 +231,11 @@
                                                 <i class="fas fa-circle"></i> Connecting...
                                             </span>
                                         </h5>
+                                        <div class="mt-2">
+                                            <button id="clearConsoleBtn" class="btn btn-sm btn-outline-secondary">
+                                                <i class="fas fa-trash"></i> Clear
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="card-body p-0 d-flex flex-column">
                                         <!-- Console Output -->
@@ -403,8 +409,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     
-    <!-- Debug Application Script -->
-    <script src="{{ url_for('static', filename='js/debug-app.js') }}?v=20250715-v5-click-test"></script>
+    <!-- Main Application Script -->
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=20250116-fixed-v2"></script>
     
     <style>
         .loading-overlay {

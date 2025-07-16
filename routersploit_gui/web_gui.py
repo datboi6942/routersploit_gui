@@ -78,6 +78,14 @@ class RouterSploitWebGUI:
             """Main page."""
             return render_template('index.html')
         
+        @self.app.route('/console-test')
+        def console_test() -> str:
+            """Console test page for debugging."""
+            from flask import send_from_directory
+            import os
+            app_dir = os.path.dirname(__file__)
+            return send_from_directory(app_dir, 'console_test.html')
+        
         @self.app.route('/sw.js')
         def service_worker() -> Any:
             """Service worker for PWA functionality."""
