@@ -1634,6 +1634,17 @@ class ToolManager:
         self.vuln_analyzer = VulnerabilityAnalyzer()
         self.netcat_enumerator = NetcatEnumerator()
         
+        # Import module management components
+        from .module_loader import ModuleLoader
+        from .runner import RunnerManager
+        from .console import ConsoleHandler
+        
+        self.module_loader = ModuleLoader()
+        self.runner_manager = RunnerManager()
+        self.console_handler = ConsoleHandler(self.module_loader)
+        self.active_sessions: Dict[str, Any] = {}
+        self.session_counter = 0
+        
     def scan_and_analyze(self, target: str, ports: str = "common", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Perform complete scan and vulnerability analysis with netcat enhancement.
         
@@ -1821,6 +1832,460 @@ class ToolManager:
                 on_output(f"[Verbose] {error_msg}", "error")
             logger.error(error_msg, error=str(e))
             return {"error": error_msg}
+    
+    def execute_exploit(self, exploit_path: str, target_info: Dict[str, Any], custom_options: Dict[str, Any] = None, verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Execute a RouterSploit exploit with intelligent option configuration.
+        
+        Args:
+            exploit_path: RouterSploit module path (e.g., 'exploits.routers.netgear.multi_rce')
+            target_info: Target information including IP, port, service details
+            custom_options: Optional custom options to override auto-configured ones
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Execution results including success status and output
+        """
+        try:
+            if verbose and on_output:
+                on_output(f"[Verbose] Executing exploit: {exploit_path}", "info")
+            
+            # Find the module
+            modules = self.module_loader.discover_modules()
+            target_module = None
+            for module in modules:
+                if module.dotted_path == exploit_path:
+                    target_module = module
+                    break
+            
+            if not target_module:
+                return {"error": f"Exploit module not found: {exploit_path}"}
+            
+            # Configure options intelligently
+            options_result = self.configure_exploit_options(exploit_path, target_info, {}, verbose=verbose, debug=debug, on_output=on_output)
+            if "error" in options_result:
+                return options_result
+            
+            configured_options = options_result.get("options", {})
+            
+            # Apply custom options if provided
+            if custom_options:
+                configured_options.update(custom_options)
+                if verbose and on_output:
+                    on_output(f"[Verbose] Applied custom options: {custom_options}", "info")
+            
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG] Final options for {exploit_path}: {configured_options}", "warning")
+            
+            # Store execution output
+            execution_output = []
+            execution_success = None
+            execution_error = None
+            
+            def output_callback(line: str, level: str):
+                execution_output.append(f"[{level}] {line}")
+                if on_output:
+                    on_output(line, level)
+            
+            def completion_callback(success: bool, error_msg: str):
+                nonlocal execution_success, execution_error
+                execution_success = success
+                execution_error = error_msg
+            
+            # Execute the module
+            started = self.runner_manager.start_module(
+                target_module,
+                configured_options,
+                output_callback,
+                completion_callback
+            )
+            
+            if not started:
+                return {"error": "Failed to start module execution"}
+            
+            # Wait for completion (with timeout)
+            import time
+            timeout = 60  # 60 seconds timeout
+            start_time = time.time()
+            
+            while execution_success is None and (time.time() - start_time) < timeout:
+                time.sleep(0.5)
+            
+            if execution_success is None:
+                return {"error": "Execution timeout"}
+            
+            output_text = "\n".join(execution_output)
+            
+            result = {
+                "success": execution_success,
+                "output": output_text,
+                "error": execution_error,
+                "exploit_path": exploit_path,
+                "target": target_info.get("ip", "unknown"),
+                "options_used": configured_options
+            }
+            
+            if verbose and on_output:
+                on_output(f"[Verbose] Exploit execution completed: success={execution_success}", "info")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Exploit execution failed: {str(e)}"
+            if verbose and on_output:
+                on_output(f"[Verbose] {error_msg}", "error")
+            logger.error(error_msg, error=str(e))
+            return {"error": error_msg}
+    
+    def configure_exploit_options(self, exploit_path: str, target_info: Dict[str, Any], scan_results: Dict[str, Any] = None, verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Intelligently configure exploit options based on target information.
+        
+        Args:
+            exploit_path: RouterSploit module path
+            target_info: Target information from scan results
+            scan_results: Original scan results for context
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Dictionary with configured options
+        """
+        try:
+            if verbose and on_output:
+                on_output(f"[Verbose] Configuring options for {exploit_path}", "info")
+            
+            # Find the module
+            modules = self.module_loader.discover_modules()
+            target_module = None
+            for module in modules:
+                if module.dotted_path == exploit_path:
+                    target_module = module
+                    break
+            
+            if not target_module:
+                return {"error": f"Module not found: {exploit_path}"}
+            
+            # Get module options
+            module_opts = target_module.opts
+            configured_options = {}
+            
+            # Extract target information
+            target_ip = target_info.get("ip", target_info.get("target", ""))
+            target_port = target_info.get("port", 80)
+            service_name = target_info.get("service", "")
+            service_version = target_info.get("version", "")
+            
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG] Target info: IP={target_ip}, Port={target_port}, Service={service_name}, Version={service_version}", "warning")
+                on_output(f"🐛 [DEBUG] Available options: {list(module_opts.keys())}", "warning")
+            
+            # Configure common options intelligently
+            for opt_name, opt_spec in module_opts.items():
+                opt_name_lower = opt_name.lower()
+                default_value = opt_spec.get("current_value", "")
+                
+                if debug and on_output:
+                    on_output(f"🐛 [DEBUG] Processing option: {opt_name} (default: {default_value})", "warning")
+                
+                # Target/Host/IP configuration
+                if opt_name_lower in ["target", "host", "rhost", "rhosts", "ip", "target_ip"]:
+                    configured_options[opt_name] = target_ip
+                    if verbose and on_output:
+                        on_output(f"[Verbose] Set {opt_name} = {target_ip}", "info")
+                
+                # Port configuration
+                elif opt_name_lower in ["port", "rport", "target_port", "lport"]:
+                    if opt_name_lower == "lport":
+                        # Local port for payloads - use a random high port
+                        configured_options[opt_name] = 4444
+                    else:
+                        configured_options[opt_name] = target_port
+                    if verbose and on_output:
+                        on_output(f"[Verbose] Set {opt_name} = {configured_options[opt_name]}", "info")
+                
+                # Service-specific configurations
+                elif "http" in service_name.lower() or target_port in [80, 443, 8080, 8443]:
+                    if opt_name_lower in ["uri", "path", "targeturi"]:
+                        configured_options[opt_name] = "/"
+                    elif opt_name_lower in ["ssl", "https"]:
+                        configured_options[opt_name] = target_port in [443, 8443]
+                
+                # SSH-specific
+                elif "ssh" in service_name.lower() or target_port == 22:
+                    if opt_name_lower in ["username", "user"]:
+                        configured_options[opt_name] = "root"
+                    elif opt_name_lower in ["password", "pass"]:
+                        configured_options[opt_name] = "admin"
+                
+                # FTP-specific
+                elif "ftp" in service_name.lower() or target_port == 21:
+                    if opt_name_lower in ["username", "user"]:
+                        configured_options[opt_name] = "anonymous"
+                    elif opt_name_lower in ["password", "pass"]:
+                        configured_options[opt_name] = "anonymous"
+                
+                # SNMP-specific
+                elif "snmp" in service_name.lower() or target_port == 161:
+                    if opt_name_lower in ["community", "snmp_community"]:
+                        configured_options[opt_name] = "public"
+                
+                # Keep default for others
+                else:
+                    if default_value is not None and default_value != "":
+                        configured_options[opt_name] = default_value
+            
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG] Final configured options: {configured_options}", "warning")
+            
+            result = {
+                "success": True,
+                "options": configured_options,
+                "module_path": exploit_path,
+                "target_info": target_info
+            }
+            
+            if verbose and on_output:
+                on_output(f"[Verbose] Configured {len(configured_options)} options", "info")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Option configuration failed: {str(e)}"
+            if verbose and on_output:
+                on_output(f"[Verbose] {error_msg}", "error")
+            logger.error(error_msg, error=str(e))
+            return {"error": error_msg}
+    
+    def check_rce_success(self, execution_output: str, module_instance: Dict[str, Any] = None, verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Check if Remote Code Execution was achieved and analyze session capabilities.
+        
+        Args:
+            execution_output: Output from exploit execution
+            module_instance: Module instance information
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            RCE analysis results
+        """
+        try:
+            if verbose and on_output:
+                on_output(f"[Verbose] Analyzing execution output for RCE indicators", "info")
+            
+            # Common RCE success indicators
+            rce_indicators = [
+                "session opened",
+                "session created",
+                "shell spawned",
+                "command shell session",
+                "meterpreter session",
+                "session established",
+                "interactive session",
+                "connection established",
+                "shell>",
+                "$ ",
+                "# ",
+                "C:\\>",
+                "C:/>"
+            ]
+            
+            # Failure indicators
+            failure_indicators = [
+                "connection refused",
+                "connection failed",
+                "timeout",
+                "access denied",
+                "authentication failed",
+                "exploit failed",
+                "no response",
+                "unreachable"
+            ]
+            
+            output_lower = execution_output.lower()
+            
+            # Check for success indicators
+            rce_detected = False
+            success_indicators_found = []
+            
+            for indicator in rce_indicators:
+                if indicator in output_lower:
+                    rce_detected = True
+                    success_indicators_found.append(indicator)
+            
+            # Check for failure indicators
+            failure_detected = False
+            failure_indicators_found = []
+            
+            for indicator in failure_indicators:
+                if indicator in output_lower:
+                    failure_detected = True
+                    failure_indicators_found.append(indicator)
+            
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG] Success indicators found: {success_indicators_found}", "warning")
+                on_output(f"🐛 [DEBUG] Failure indicators found: {failure_indicators_found}", "warning")
+            
+            # Determine session type
+            session_type = "unknown"
+            if "meterpreter" in output_lower:
+                session_type = "meterpreter"
+            elif any(shell_indicator in output_lower for shell_indicator in ["shell>", "$ ", "# ", "C:\\>", "C:/>"]):
+                session_type = "shell"
+            elif "session" in output_lower:
+                session_type = "generic"
+            
+            # Generate session ID if RCE detected
+            session_id = None
+            if rce_detected:
+                self.session_counter += 1
+                session_id = f"session_{self.session_counter}"
+            
+            result = {
+                "rce_achieved": rce_detected and not failure_detected,
+                "session_type": session_type,
+                "session_id": session_id,
+                "success_indicators": success_indicators_found,
+                "failure_indicators": failure_indicators_found,
+                "execution_output": execution_output,
+                "confidence": "high" if len(success_indicators_found) > 1 else "medium" if success_indicators_found else "low"
+            }
+            
+            if verbose and on_output:
+                if rce_detected:
+                    on_output(f"[Verbose] RCE SUCCESS detected! Session type: {session_type}", "success")
+                else:
+                    on_output(f"[Verbose] No RCE indicators found", "warning")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"RCE check failed: {str(e)}"
+            if verbose and on_output:
+                on_output(f"[Verbose] {error_msg}", "error")
+            logger.error(error_msg, error=str(e))
+            return {"error": error_msg}
+    
+    def create_interactive_session(self, session_id: str, target: str, session_type: str = "shell", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Create an interactive terminal session for the user after successful RCE.
+        
+        Args:
+            session_id: Session identifier from successful exploit
+            target: Target IP address
+            session_type: Type of session (shell, meterpreter, etc.)
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Session creation results
+        """
+        try:
+            if verbose and on_output:
+                on_output(f"[Verbose] Creating interactive session {session_id} for {target}", "info")
+            
+            # Store session information
+            session_info = {
+                "session_id": session_id,
+                "target": target,
+                "session_type": session_type,
+                "created_at": time.time(),
+                "status": "active",
+                "commands": []
+            }
+            
+            self.active_sessions[session_id] = session_info
+            
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG] Session {session_id} stored with info: {session_info}", "warning")
+            
+            # Generate user instructions
+            instructions = self._generate_session_instructions(session_type, target)
+            
+            result = {
+                "success": True,
+                "session_id": session_id,
+                "target": target,
+                "session_type": session_type,
+                "status": "ready_for_user",
+                "instructions": instructions,
+                "websocket_endpoint": f"/api/session/{session_id}/interact"
+            }
+            
+            if verbose and on_output:
+                on_output(f"[Verbose] Interactive session {session_id} ready for user handoff", "success")
+                on_output(f"[Verbose] {instructions}", "info")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Session creation failed: {str(e)}"
+            if verbose and on_output:
+                on_output(f"[Verbose] {error_msg}", "error")
+            logger.error(error_msg, error=str(e))
+            return {"error": error_msg}
+    
+    def _generate_session_instructions(self, session_type: str, target: str) -> str:
+        """Generate user instructions for interacting with the session.
+        
+        Args:
+            session_type: Type of session
+            target: Target IP address
+            
+        Returns:
+            User instructions
+        """
+        base_instructions = f"""
+🎉 REMOTE CODE EXECUTION ACHIEVED! 🎉
+
+Target: {target}
+Session Type: {session_type}
+
+The interactive terminal is now available for your use. You can execute commands directly on the compromised target.
+
+Basic Commands to Try:
+- whoami          (show current user)
+- id              (show user ID and groups) 
+- pwd             (show current directory)
+- ls -la          (list files and directories)
+- uname -a        (show system information)
+- ps aux          (show running processes)
+- netstat -an     (show network connections)
+"""
+        
+        if session_type == "meterpreter":
+            base_instructions += """
+Meterpreter Commands:
+- sysinfo         (system information)
+- getuid          (current user)
+- shell           (drop to system shell)
+- download <file> (download file from target)
+- upload <file>   (upload file to target)
+- screenshot      (take screenshot)
+- keyscan_start   (start keylogger)
+"""
+        elif session_type == "shell":
+            base_instructions += """
+Shell Commands:
+- cat /etc/passwd (show user accounts)
+- cat /etc/shadow (show password hashes - if accessible)
+- find / -perm -4000 (find SUID binaries)
+- crontab -l      (show scheduled tasks)
+"""
+        
+        base_instructions += """
+⚠️  Remember:
+- Only use this access for authorized testing
+- Document your findings
+- Clean up after testing
+- Be respectful of the target system
+
+Type 'exit' to close the session when finished.
+"""
+        
+        return base_instructions.strip()
     
     def test_exploit(self, exploit_code: str, target: str, verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Test an exploit against a target.

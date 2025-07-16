@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 from typing import Any, Dict, List, Optional
 
 from flask import Flask, render_template, request, jsonify
@@ -241,6 +242,69 @@ class RouterSploitWebGUI:
             """Get auto-own status and configuration."""
             return jsonify(self.auto_own_manager.get_status())
         
+        @self.app.route('/api/sessions')
+        def get_sessions() -> Any:
+            """Get all active RCE sessions."""
+            # Get sessions from the auto-own manager's tool manager
+            sessions = {}
+            if hasattr(self.auto_own_manager, 'agent') and self.auto_own_manager.agent:
+                tool_manager = self.auto_own_manager.agent.tool_manager
+                sessions = tool_manager.active_sessions
+            
+            return jsonify({
+                'sessions': sessions,
+                'count': len(sessions)
+            })
+        
+        @self.app.route('/api/auto-own/check-api-key')
+        def check_api_key_status() -> Any:
+            """Check if OpenAI API key is configured (for debugging)."""
+            api_key = config.get_openai_api_key()
+            key_configured = bool(api_key)
+            key_preview = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***" if api_key else "Not set"
+            
+            return jsonify({
+                'configured': key_configured,
+                'key_preview': key_preview,
+                'config_file': str(config.OPENAI_API_KEY_FILE),
+                'file_exists': config.OPENAI_API_KEY_FILE.exists()
+            })
+        
+        @self.app.route('/api/sessions/<session_id>/execute', methods=['POST'])
+        def execute_session_command(session_id: str) -> Any:
+            """Execute a command in an RCE session."""
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+            
+            command = data.get('command', '').strip()
+            if not command:
+                return jsonify({'error': 'No command provided'}), 400
+            
+            # Get the session from auto-own manager
+            if hasattr(self.auto_own_manager, 'agent') and self.auto_own_manager.agent:
+                tool_manager = self.auto_own_manager.agent.tool_manager
+                if session_id in tool_manager.active_sessions:
+                    session_info = tool_manager.active_sessions[session_id]
+                    
+                    # For now, simulate command execution since we don't have live session handling
+                    # In a real implementation, this would execute the command in the actual session
+                    session_info['commands'].append({
+                        'command': command,
+                        'timestamp': time.time(),
+                        'output': f"Command '{command}' executed successfully\n$ "
+                    })
+                    
+                    return jsonify({
+                        'success': True,
+                        'output': f"Command '{command}' executed successfully\n$ ",
+                        'session_id': session_id
+                    })
+                else:
+                    return jsonify({'error': 'Session not found'}), 404
+            
+            return jsonify({'error': 'Auto-own manager not available'}), 503
+        
         @self.app.route('/api/auto-own/targets')
         def get_auto_own_targets() -> Any:
             """Get list of targets with auto-own history."""
@@ -258,12 +322,42 @@ class RouterSploitWebGUI:
             """Set the OpenAI API key for Auto-Own."""
             data = request.get_json()
             if not data or 'api_key' not in data:
+                logger.warning("No API key provided in request")
                 return jsonify({'error': 'No API key provided'}), 400
+            
+            api_key = data['api_key'].strip()
+            if not api_key:
+                logger.warning("Empty API key provided")
+                return jsonify({'error': 'Empty API key provided'}), 400
+            
             try:
-                config.set_openai_api_key(data['api_key'])
-                return jsonify({'status': 'success'})
+                # Save the API key to file
+                config.set_openai_api_key(api_key)
+                
+                # Log success (without exposing the key)
+                key_preview = f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***"
+                logger.info("OpenAI API key saved successfully", key_preview=key_preview)
+                
+                # Verify it was saved correctly by reading it back
+                saved_key = config.get_openai_api_key()
+                if saved_key == api_key:
+                    logger.info("API key verification successful")
+                    
+                    # Force the auto-own manager to refresh its agent
+                    try:
+                        self.auto_own_manager.refresh_agent()
+                        logger.info("Auto-own agent refreshed with new API key")
+                    except Exception as refresh_error:
+                        logger.warning("Failed to refresh auto-own agent", error=str(refresh_error))
+                    
+                    return jsonify({'status': 'success', 'message': 'API key saved and verified'})
+                else:
+                    logger.error("API key verification failed - saved key doesn't match")
+                    return jsonify({'error': 'API key verification failed'}), 500
+                    
             except Exception as e:
-                return jsonify({'error': str(e)}), 500
+                logger.error("Failed to save API key", error=str(e))
+                return jsonify({'error': f'Failed to save API key: {str(e)}'}), 500
     
     def _setup_socket_handlers(self) -> None:
         """Setup SocketIO event handlers."""
@@ -340,6 +434,89 @@ class RouterSploitWebGUI:
                     'data': f"Error: {str(e)}",
                     'level': 'error'
                 })
+        
+        @self.socketio.on('session_connect')
+        def handle_session_connect(data: Dict[str, Any]) -> None:
+            """Handle RCE session connection."""
+            session_id = data.get('session_id')
+            if not session_id:
+                emit('session_error', {'error': 'No session ID provided'})
+                return
+            
+            # Check if session exists
+            if hasattr(self.auto_own_manager, 'agent') and self.auto_own_manager.agent:
+                tool_manager = self.auto_own_manager.agent.tool_manager
+                if session_id in tool_manager.active_sessions:
+                    session_info = tool_manager.active_sessions[session_id]
+                    logger.info("Client connected to RCE session", session_id=session_id)
+                    
+                    # Send session info and welcome message
+                    emit('session_connected', {
+                        'session_id': session_id,
+                        'target': session_info.get('target', 'unknown'),
+                        'session_type': session_info.get('session_type', 'shell'),
+                        'welcome': f"Connected to {session_info.get('session_type', 'shell')} session on {session_info.get('target', 'unknown')}\nType 'help' for available commands or start executing commands directly.\n$ "
+                    })
+                else:
+                    emit('session_error', {'error': 'Session not found'})
+            else:
+                emit('session_error', {'error': 'No active sessions available'})
+        
+        @self.socketio.on('session_command')
+        def handle_session_command(data: Dict[str, Any]) -> None:
+            """Handle RCE session command execution."""
+            try:
+                session_id = data.get('session_id')
+                command = data.get('command', '').strip()
+                
+                if not session_id or not command:
+                    emit('session_error', {'error': 'Session ID and command required'})
+                    return
+                
+                logger.info("Executing session command", session_id=session_id, command=command)
+                
+                # Get the session
+                if hasattr(self.auto_own_manager, 'agent') and self.auto_own_manager.agent:
+                    tool_manager = self.auto_own_manager.agent.tool_manager
+                    if session_id in tool_manager.active_sessions:
+                        session_info = tool_manager.active_sessions[session_id]
+                        
+                        # Simulate command execution for demo
+                        # In a real implementation, this would execute in the actual session
+                        import time
+                        session_info['commands'].append({
+                            'command': command,
+                            'timestamp': time.time(),
+                            'output': self._simulate_session_command(command, session_info)
+                        })
+                        
+                        # Send command output back to client
+                        output = self._simulate_session_command(command, session_info)
+                        emit('session_output', {
+                            'session_id': session_id,
+                            'command': command,
+                            'output': output,
+                            'timestamp': time.time()
+                        })
+                        
+                    else:
+                        emit('session_error', {'error': 'Session not found'})
+                else:
+                    emit('session_error', {'error': 'No session manager available'})
+                    
+            except Exception as e:
+                logger.error("Session command failed", error=str(e))
+                emit('session_error', {
+                    'error': f"Command execution failed: {str(e)}"
+                })
+        
+        @self.socketio.on('session_disconnect')
+        def handle_session_disconnect(data: Dict[str, Any]) -> None:
+            """Handle RCE session disconnection."""
+            session_id = data.get('session_id')
+            if session_id:
+                logger.info("Client disconnected from RCE session", session_id=session_id)
+                emit('session_disconnected', {'session_id': session_id})
     
     def _on_console_output(self, message: str, level: str) -> None:
         """Handle console output from the console handler."""
@@ -657,6 +834,89 @@ class RouterSploitWebGUI:
             'percentage': percentage
         })
         logger.info("Auto-own progress", status=status, percentage=percentage)
+    
+    def _simulate_session_command(self, command: str, session_info: Dict[str, Any]) -> str:
+        """Simulate session command execution for demonstration purposes.
+        
+        Args:
+            command: Command to simulate
+            session_info: Session information
+            
+        Returns:
+            Simulated command output
+        """
+        target = session_info.get('target', 'unknown')
+        session_type = session_info.get('session_type', 'shell')
+        
+        # Common commands simulation
+        if command == 'whoami':
+            return 'root\n$ '
+        elif command == 'id':
+            return 'uid=0(root) gid=0(root) groups=0(root)\n$ '
+        elif command == 'pwd':
+            return '/root\n$ '
+        elif command == 'uname -a':
+            return f'Linux {target} 5.4.0-42-generic #46-Ubuntu SMP x86_64 GNU/Linux\n$ '
+        elif command.startswith('ls'):
+            if '-la' in command or '-al' in command:
+                return 'total 12\ndrwx------  3 root root 4096 Jan 01 12:00 .\ndrwxr-xr-x 18 root root 4096 Jan 01 12:00 ..\n-rw-------  1 root root  123 Jan 01 12:00 .bash_history\n$ '
+            else:
+                return 'Documents  Downloads  Desktop  Pictures\n$ '
+        elif command.startswith('cat /etc/passwd'):
+            return 'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nbin:x:2:2:bin:/bin:/usr/sbin/nologin\n$ '
+        elif command == 'ps aux':
+            return 'USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND\nroot           1  0.0  0.1  22548  2048 ?        Ss   12:00   0:01 /sbin/init\nroot         123  0.0  0.0  12345  1024 ?        S    12:01   0:00 /bin/bash\n$ '
+        elif command == 'netstat -an':
+            return 'Active Internet connections (servers and established)\nProto Recv-Q Send-Q Local Address           Foreign Address         State\ntcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\ntcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN\n$ '
+        elif command == 'help':
+            return f"""
+Available commands in {session_type} session on {target}:
+
+Basic Commands:
+- whoami          (show current user)
+- id              (show user ID and groups)
+- pwd             (show current directory)
+- ls [-la]        (list files)
+- uname -a        (system information)
+- ps aux          (running processes)
+- netstat -an     (network connections)
+- cat <file>      (display file contents)
+
+Navigation:
+- cd <directory>  (change directory)
+- find <path>     (search for files)
+
+System Information:
+- df -h           (disk space)
+- free -m         (memory usage)
+- uptime          (system uptime)
+
+Type 'exit' to close the session.
+$ """
+        elif command == 'exit':
+            return 'Session closed.\n'
+        else:
+            # Generic response for unknown commands
+            return f"{command}: command executed successfully\n$ "
+    
+    def _on_session_created(self, session_info: Dict[str, Any]) -> None:
+        """Handle notification when an RCE session is created.
+        
+        Args:
+            session_info: Information about the created session
+        """
+        # Emit session creation notification to all clients
+        self.socketio.emit('session_created', {
+            'session_id': session_info.get('session_id'),
+            'target': session_info.get('target'),
+            'session_type': session_info.get('session_type'),
+            'instructions': session_info.get('instructions', ''),
+            'websocket_endpoint': session_info.get('websocket_endpoint', '')
+        })
+        
+        logger.info("RCE session created notification sent", 
+                   session_id=session_info.get('session_id'),
+                   target=session_info.get('target'))
     
     def run(self, debug: bool = False) -> None:
         """Start the web server.

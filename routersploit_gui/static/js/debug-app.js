@@ -30,6 +30,9 @@ class DebugRouterSploitGUI {
             // Test basic DOM access
             this.testDOMAccess();
             
+            // Test server connectivity
+            this.testServerConnectivity();
+            
             // Initialize Socket.IO
             this.initSocket();
             
@@ -73,6 +76,29 @@ class DebugRouterSploitGUI {
             console.warn('⚠️ Missing elements:', missing);
         } else {
             console.log('✅ All required elements found');
+        }
+    }
+    
+    async testServerConnectivity() {
+        console.log('🌐 Testing server connectivity...');
+        
+        try {
+            const response = await fetch('/api/auto-own/check-api-key', {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            });
+            
+            console.log('🌐 Server connectivity test response:', response.status);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Server is reachable, API key status:', data);
+            } else {
+                console.warn('⚠️ Server responded but with error:', response.status);
+            }
+        } catch (error) {
+            console.error('❌ Server connectivity test failed:', error);
+            console.error('🚨 WARNING: Cannot reach server! Button clicks may not work.');
         }
     }
     
@@ -159,8 +185,9 @@ class DebugRouterSploitGUI {
         // API Key Save Button
         const saveApiBtn = document.getElementById('saveApiKeyBtn');
         if (saveApiBtn) {
+            console.log('✅ Found saveApiKeyBtn. Adding listener...');
             saveApiBtn.addEventListener('click', (e) => {
-                console.log('🔑 Save API key button clicked!');
+                console.log('--- SAVE API KEY BUTTON CLICK DETECTED ---');
                 e.preventDefault();
                 this.saveApiKey();
             });
@@ -381,8 +408,11 @@ class DebugRouterSploitGUI {
         }
     }
     
-    saveApiKey() {
+    async saveApiKey() {
+        alert("--- DEBUG: saveApiKey function has been called! ---");
+        console.log('--- saveApiKey function started! ---');
         console.log('🔑 Saving API key...');
+        console.log('🔑 Function called at:', new Date().toISOString());
         
         const apiKeyInput = document.getElementById('openaiApiKey');
         if (!apiKeyInput) {
@@ -392,20 +422,122 @@ class DebugRouterSploitGUI {
         }
         
         const apiKey = apiKeyInput.value.trim();
+        console.log('🔑 API key length:', apiKey.length);
+        console.log('🔑 API key starts with:', apiKey.substring(0, 8));
+        
         if (!apiKey) {
             console.warn('⚠️ No API key specified');
             this.showError('Please enter an API key');
             return;
         }
         
+        const saveBtn = document.getElementById('saveApiKeyBtn');
+        
         try {
-            localStorage.setItem('openai_api_key', apiKey);
-            console.log('✅ API key saved to localStorage');
-            this.updateStatus('API Key Saved', 'success');
+            // Show saving state
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                console.log('🔑 Button state updated to saving...');
+            }
+            
+            console.log('🔑 About to make fetch call...');
+            console.log('🔑 Fetch URL: /api/auto-own/set-api-key');
+            console.log('🔑 Fetch method: POST');
+            console.log('🔑 Content-Type: application/json');
+            
+            const requestBody = JSON.stringify({ api_key: apiKey });
+            console.log('🔑 Request body length:', requestBody.length);
+            console.log('🔑 Request body preview:', requestBody.substring(0, 50) + '...');
+            
+            // Add a unique timestamp to prevent caching
+            const timestamp = Date.now();
+            const url = `/api/auto-own/set-api-key?t=${timestamp}`;
+            console.log('🔑 Final URL with timestamp:', url);
+            
+            console.log('🔑 Starting fetch request...');
+            
+            // Send to backend to save in file (where Python reads from)
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache'
+                },
+                body: requestBody
+            });
+            
+            console.log('🔑 Fetch completed!');
+            console.log('🔑 Response status:', response.status);
+            console.log('🔑 Response statusText:', response.statusText);
+            console.log('🔑 Response headers:', Object.fromEntries(response.headers.entries()));
+            
+            if (!response.ok) {
+                console.error('🔑 Response not OK, getting error text...');
+                const errorText = await response.text();
+                console.error('🔑 Backend HTTP error:', response.status, errorText);
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            
+            console.log('🔑 Response OK, parsing JSON...');
+            const result = await response.json();
+            console.log('🔑 Backend JSON result:', result);
+            
+            if (result.status === 'success') {
+                console.log('🔑 Backend save successful!');
+                
+                // Also save to localStorage as backup
+                localStorage.setItem('openai_api_key', apiKey);
+                console.log('🔑 Also saved to localStorage');
+                
+                console.log('✅ API key saved to backend file and localStorage');
+                this.updateStatus('API Key Saved to Backend', 'success');
+                
+                // Clear input for security
+                apiKeyInput.value = '';
+                console.log('🔑 Input field cleared');
+                
+                // Show success message
+                this.showSuccess('API key saved successfully to backend file!');
+                
+            } else {
+                console.error('❌ Backend save failed with result:', result);
+                throw new Error(result.error || 'Failed to save API key to backend');
+            }
             
         } catch (error) {
-            console.error('❌ Failed to save API key:', error);
-            this.showError('Failed to save API key: ' + error.message);
+            console.error('❌ Exception in saveApiKey:', error);
+            console.error('❌ Error name:', error.name);
+            console.error('❌ Error message:', error.message);
+            console.error('❌ Error stack:', error.stack);
+            
+            // Check if it's a network error
+            if (error instanceof TypeError && error.message.includes('fetch')) {
+                console.error('🌐 Network error detected - server might be down');
+                this.showError('Network error: Cannot connect to server. Is the server running?');
+            } else {
+                console.log('⚠️ Falling back to localStorage only due to error:', error.message);
+                
+                // Fallback: save to localStorage only
+                try {
+                    localStorage.setItem('openai_api_key', apiKey);
+                    console.log('⚠️ API key saved to localStorage as fallback');
+                    this.updateStatus('API Key Saved (localStorage only)', 'warning');
+                    this.showError('Failed to save to backend, saved locally only: ' + error.message);
+                } catch (storageError) {
+                    console.error('❌ Even localStorage save failed:', storageError);
+                    this.showError('Failed to save API key: ' + error.message);
+                }
+            }
+        } finally {
+            // Restore button state
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+                console.log('🔑 Button state restored');
+            }
+            console.log('🔑 saveApiKey function completed at:', new Date().toISOString());
         }
     }
     
@@ -418,9 +550,15 @@ class DebugRouterSploitGUI {
         }
     }
     
+    showSuccess(message) {
+        console.log('✅ Success:', message);
+        this.addAutoOwnOutput(`✅ Success: ${message}`, 'success');
+        this.updateStatus('Success', 'success');
+    }
+    
     showError(message) {
-        console.error('💥 Error:', message);
-        this.addAutoOwnOutput(`💥 Error: ${message}`, 'error');
+        console.error('❌ Error:', message);
+        this.addAutoOwnOutput(`❌ Error: ${message}`, 'error');
         this.updateStatus('Error', 'danger');
     }
     

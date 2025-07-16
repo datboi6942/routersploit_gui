@@ -354,12 +354,29 @@
                                                     <i class="fas fa-trash"></i> Clear
                                                 </button>
                                             </div>
-                                            <div id="autoOwnOutput" class="console-output p-3" style="height: 400px; overflow-y: auto;">
+                                            <div id="autoOwnOutput" class="console-output p-3" style="height: 300px; overflow-y: auto;">
                                                 <div class="console-line text-neon">
                                                     <i class="fas fa-robot"></i> Auto-Own AI Agent Ready<br>
                                                     <small class="text-muted typing-effect">
                                                         Enter a target IP address and click "Start Auto-Own" to begin automated vulnerability assessment and exploitation.
                                                     </small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- RCE Sessions Panel -->
+                                        <div id="rceSessions" class="mt-3" style="display: none;">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <h6 class="mb-0 text-success">
+                                                    <i class="fas fa-terminal"></i> 🎉 RCE Sessions Available!
+                                                </h6>
+                                                <button id="refreshSessionsBtn" class="btn btn-sm btn-outline-success">
+                                                    <i class="fas fa-sync"></i> Refresh
+                                                </button>
+                                            </div>
+                                            <div id="sessionsContainer" class="bg-dark border border-success rounded p-3">
+                                                <div class="text-center text-muted">
+                                                    <i class="fas fa-search"></i> No active sessions found
                                                 </div>
                                             </div>
                                         </div>
@@ -387,7 +404,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     
     <!-- Debug Application Script -->
-    <script src="{{ url_for('static', filename='js/debug-app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/debug-app.js') }}?v=20250715-v5-click-test"></script>
     
     <style>
         .loading-overlay {

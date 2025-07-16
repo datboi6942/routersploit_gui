@@ -304,6 +304,17 @@ class AutoOwnManager:
         """
         return self.agent.get_target_history(target)
         
+    def refresh_agent(self) -> None:
+        """Refresh the LLM agent to pick up new API keys or configuration changes."""
+        try:
+            # Re-initialize the agent to pick up new configuration
+            from .llm_agent import AutoOwnAgent
+            self.agent = AutoOwnAgent()
+            logger.info("Auto-own agent refreshed successfully")
+        except Exception as e:
+            logger.error("Failed to refresh auto-own agent", error=str(e))
+            raise
+    
     def cleanup(self) -> None:
         """Clean up resources."""
         if self.current_runner:

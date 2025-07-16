@@ -300,6 +300,23 @@ class RouterSploitGUI {
         this.socket.on('auto_own_progress', (data) => {
             this.updateAutoOwnProgress(data.status, data.percentage);
         });
+        
+        // RCE Session event handlers
+        this.socket.on('session_created', (data) => {
+            this.onSessionCreated(data);
+        });
+        
+        this.socket.on('session_connected', (data) => {
+            this.onSessionConnected(data);
+        });
+        
+        this.socket.on('session_output', (data) => {
+            this.onSessionOutput(data);
+        });
+        
+        this.socket.on('session_error', (data) => {
+            this.onSessionError(data);
+        });
     }
     
     setupConsoleEventHandlers() {
@@ -1432,6 +1449,7 @@ class RouterSploitGUI {
                 saveApiKeyBtn.addEventListener('click', async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    
                     try {
                         const apiKey = openaiApiKeyInput.value.trim();
                         if (!apiKey) {
@@ -1439,14 +1457,44 @@ class RouterSploitGUI {
                             return;
                         }
                         
-                        // Save to localStorage
-                        localStorage.setItem('openai_api_key', apiKey);
-                        this.showSuccess('API key saved successfully');
+                        // Show saving state
+                        saveApiKeyBtn.disabled = true;
+                        saveApiKeyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
                         
-                        console.log('API key saved');
+                        // Send to backend to save in file (where Python reads from)
+                        const response = await fetch('/api/auto-own/set-api-key', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                api_key: apiKey
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok && result.status === 'success') {
+                            // Also save to localStorage as backup
+                            localStorage.setItem('openai_api_key', apiKey);
+                            
+                            this.showSuccess('API key saved successfully to backend!');
+                            console.log('API key saved to backend file and localStorage');
+                            
+                            // Clear the input field for security
+                            openaiApiKeyInput.value = '';
+                            
+                        } else {
+                            throw new Error(result.error || 'Failed to save API key to backend');
+                        }
+                        
                     } catch (error) {
                         console.error('Error saving API key:', error);
-                        this.showError('Failed to save API key');
+                        this.showError('Failed to save API key: ' + error.message);
+                    } finally {
+                        // Restore button state
+                        saveApiKeyBtn.disabled = false;
+                        saveApiKeyBtn.innerHTML = '<i class="fas fa-save"></i> Save';
                     }
                 });
             }
@@ -1829,6 +1877,134 @@ class RouterSploitGUI {
         const statusBadge = document.getElementById('autoOwnStatus');
         statusBadge.className = `badge bg-${type}`;
         statusBadge.innerHTML = `<i class="fas fa-circle"></i> ${text}`;
+    }
+    
+    // RCE Session Methods
+    onSessionCreated(data) {
+        console.log('🎉 RCE Session created:', data);
+        
+        // Show the sessions panel
+        const sessionsPanel = document.getElementById('rceSessions');
+        if (sessionsPanel) {
+            sessionsPanel.style.display = 'block';
+        }
+        
+        // Add success message to auto-own output
+        this.addAutoOwnOutput('🎉 REMOTE CODE EXECUTION ACHIEVED!', 'success');
+        this.addAutoOwnOutput(`Session ID: ${data.session_id}`, 'success');
+        this.addAutoOwnOutput(`Target: ${data.target}`, 'success');
+        this.addAutoOwnOutput(`Session Type: ${data.session_type}`, 'success');
+        this.addAutoOwnOutput('Interactive terminal is now available below!', 'success');
+        
+        // Update sessions container
+        this.updateSessionsContainer([data]);
+        
+        // Automatically connect to the session
+        this.connectToSession(data.session_id);
+        
+        // Play success sound if available
+        if (this.effectsManager) {
+            this.effectsManager.playSound('success');
+        }
+    }
+    
+    onSessionConnected(data) {
+        console.log('🔌 Connected to RCE session:', data);
+        this.addAutoOwnOutput(`Connected to ${data.session_type} session on ${data.target}`, 'info');
+        this.addAutoOwnOutput('You can now execute commands directly on the compromised target!', 'info');
+        
+        // Show the interactive terminal
+        this.showSessionTerminal(data);
+    }
+    
+    onSessionOutput(data) {
+        console.log('📤 Session output:', data);
+        // Display the command output in the session terminal
+        this.displaySessionOutput(data);
+    }
+    
+    onSessionError(data) {
+        console.error('❌ Session error:', data);
+        this.addAutoOwnOutput(`Session Error: ${data.error}`, 'error');
+    }
+    
+    async updateSessionsContainer(sessions = null) {
+        if (!sessions) {
+            // Fetch current sessions from API
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                sessions = Object.values(data.sessions || {});
+            } catch (error) {
+                console.error('Failed to fetch sessions:', error);
+                return;
+            }
+        }
+        
+        const container = document.getElementById('sessionsContainer');
+        if (!container) return;
+        
+        if (sessions.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="fas fa-search"></i> No active sessions found
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = sessions.map(session => `
+            <div class="session-item border border-success rounded p-3 mb-2" data-session-id="${session.session_id}">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6 class="text-success mb-1">
+                            <i class="fas fa-terminal"></i> ${session.session_id}
+                        </h6>
+                        <p class="mb-1 text-light">
+                            <strong>Target:</strong> ${session.target}<br>
+                            <strong>Type:</strong> ${session.session_type}<br>
+                            <strong>Status:</strong> <span class="badge bg-success">${session.status}</span>
+                        </p>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <button class="btn btn-success btn-sm connect-session-btn" data-session-id="${session.session_id}">
+                            <i class="fas fa-plug"></i> Connect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        
+        // Add click handlers for connect buttons
+        container.querySelectorAll('.connect-session-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const sessionId = e.target.closest('.connect-session-btn').dataset.sessionId;
+                this.connectToSession(sessionId);
+            });
+        });
+    }
+    
+    connectToSession(sessionId) {
+        console.log(`🔌 Connecting to session: ${sessionId}`);
+        this.socket.emit('session_connect', { session_id: sessionId });
+    }
+    
+    showSessionTerminal(sessionData) {
+        // For now, use the existing console output area to show session terminal
+        // In a more advanced implementation, you could create a separate terminal window
+        this.addAutoOwnOutput('='.repeat(50), 'info');
+        this.addAutoOwnOutput('🚀 INTERACTIVE TERMINAL READY', 'success');
+        this.addAutoOwnOutput('='.repeat(50), 'info');
+        this.addAutoOwnOutput(sessionData.welcome, 'info');
+        
+        // You could enhance this by adding a dedicated terminal input/output area
+        this.addAutoOwnOutput('💡 Tip: Use the console tab for direct command interaction', 'info');
+    }
+    
+    displaySessionOutput(data) {
+        // Display session command output
+        this.addAutoOwnOutput(`> ${data.command}`, 'command');
+        this.addAutoOwnOutput(data.output, 'info');
     }
     
     enableAutoOwnControls(running) {

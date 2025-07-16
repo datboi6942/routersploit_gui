@@ -27,7 +27,15 @@ class AutoOwnAgent:
     def _ensure_client(self) -> None:
         """Ensure the OpenAI client is initialized with the latest API key."""
         api_key = config.get_openai_api_key()
-        if not self.client or getattr(self.client, '_api_key', None) != api_key:
+        if not api_key:
+            logger.warning("No OpenAI API key configured")
+            raise ValueError("No OpenAI API key configured")
+        
+        # Always re-check the API key to handle dynamic updates
+        current_key = getattr(self.client, '_api_key', None) if self.client else None
+        
+        if not self.client or current_key != api_key:
+            logger.info("Initializing OpenAI client with updated API key", key_preview=f"{api_key[:10]}...{api_key[-4:]}" if len(api_key) > 14 else "***")
             self.client = openai.OpenAI(api_key=api_key)
             self.client._api_key = api_key  # type: ignore
         
@@ -155,22 +163,39 @@ class AutoOwnAgent:
         Returns:
             System prompt string
         """
-        return """You are an expert cybersecurity penetration tester and exploit developer. Your goal is to automatically assess targets for vulnerabilities and develop or find working exploits to achieve Remote Code Execution (RCE).
+        return """You are an expert cybersecurity penetration tester and exploit developer. Your goal is to automatically assess targets for vulnerabilities, find working exploits, and achieve Remote Code Execution (RCE) with user handoff.
 
 Your capabilities:
 1. Analyze nmap scan results to identify potential vulnerabilities
 2. Search for existing exploits in Metasploit and Exploit-DB
-3. Generate custom exploits when existing ones are not available
-4. Verify exploit functionality and success
-5. Focus on achieving RCE (Remote Code Execution)
+3. Automatically execute RouterSploit exploits with intelligent option configuration
+4. Configure exploit options based on target information and scan results
+5. Detect successful RCE and create interactive sessions
+6. Hand off terminal control to users after achieving RCE
+7. Generate custom exploits when existing ones are not available
 
-Your workflow:
+Your enhanced workflow:
 1. Scan the target using nmap to enumerate services and versions
 2. Analyze scan results to identify potential vulnerabilities
 3. Search for existing exploits that match the discovered services/versions
-4. If no existing exploit is found, attempt to generate a custom exploit
-5. Test and verify the exploit works
-6. Document the process and results
+4. AUTOMATICALLY execute promising exploits using execute_exploit tool:
+   - Use configure_exploit_options to intelligently set options based on target info
+   - Execute the exploit against the target
+   - Check for successful exploitation using check_rce_success
+5. If RCE is achieved:
+   - Create an interactive session using create_interactive_session
+   - Hand off terminal control to the user
+   - Provide clear instructions on how to use the session
+6. If no existing exploit works, attempt to generate a custom exploit
+7. Document the process and results
+
+Key execution principles:
+- ALWAYS try to execute exploits automatically, don't just find them
+- Use target scan information to intelligently configure exploit options
+- Target IP, port, service version should be automatically set
+- For web applications, set appropriate paths, URLs, and parameters
+- Check for RCE indicators in output (shell prompt, command execution, session creation)
+- Immediately hand off control to user when RCE is achieved
 
 Safety guidelines:
 - Only test against authorized targets
@@ -178,7 +203,7 @@ Safety guidelines:
 - Use safe testing methods when possible
 - Provide clear documentation of findings
 
-Important: Be concise in your responses. Avoid repeating the same analysis for identical services. Focus on the most promising vulnerabilities first."""
+Important: Be proactive in execution. When you find an exploit, immediately attempt to execute it with proper configuration. Focus on achieving RCE and handing off control to the user."""
 
     def _sanitize_message_content(self, content: str) -> str:
         """Sanitize message content to remove problematic characters for OpenAI API.
@@ -378,6 +403,105 @@ Important: Be concise in your responses. Avoid repeating the same analysis for i
                         "required": ["exploit_code", "target"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "execute_exploit",
+                    "description": "Execute a RouterSploit exploit automatically with intelligent option configuration",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "exploit_path": {
+                                "type": "string",
+                                "description": "RouterSploit module path (e.g., 'exploits.routers.netgear.multi_rce')"
+                            },
+                            "target_info": {
+                                "type": "object",
+                                "description": "Target information including IP, port, service details"
+                            },
+                            "custom_options": {
+                                "type": "object",
+                                "description": "Optional custom options to override auto-configured ones",
+                                "default": {}
+                            }
+                        },
+                        "required": ["exploit_path", "target_info"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "configure_exploit_options",
+                    "description": "Intelligently configure exploit options based on target information",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "exploit_path": {
+                                "type": "string",
+                                "description": "RouterSploit module path"
+                            },
+                            "target_info": {
+                                "type": "object",
+                                "description": "Target information from scan results"
+                            },
+                            "scan_results": {
+                                "type": "object",
+                                "description": "Original scan results for context"
+                            }
+                        },
+                        "required": ["exploit_path", "target_info"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_rce_success",
+                    "description": "Check if Remote Code Execution was achieved and analyze session capabilities",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "execution_output": {
+                                "type": "string",
+                                "description": "Output from exploit execution"
+                            },
+                            "module_instance": {
+                                "type": "object",
+                                "description": "Module instance information",
+                                "default": {}
+                            }
+                        },
+                        "required": ["execution_output"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_interactive_session",
+                    "description": "Create an interactive terminal session for the user after successful RCE",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Session identifier from successful exploit"
+                            },
+                            "target": {
+                                "type": "string",
+                                "description": "Target IP address"
+                            },
+                            "session_type": {
+                                "type": "string",
+                                "description": "Type of session (shell, meterpreter, etc.)",
+                                "default": "shell"
+                            }
+                        },
+                        "required": ["session_id", "target"]
+                    }
+                }
             }
         ]
 
@@ -432,6 +556,37 @@ Important: Be concise in your responses. Avoid repeating the same analysis for i
                 if debug:
                     debug_emit(f"Testing exploit against {target}")
                 result = self.tool_manager.test_exploit(exploit_code, target, verbose=verbose, debug=debug, on_output=on_output)
+                
+            elif tool_name == "execute_exploit":
+                exploit_path = arguments.get("exploit_path", "")
+                target_info = arguments.get("target_info", {})
+                custom_options = arguments.get("custom_options", {})
+                if debug:
+                    debug_emit(f"Executing exploit {exploit_path} against {target_info.get('ip', 'unknown')}")
+                result = self.tool_manager.execute_exploit(exploit_path, target_info, custom_options, verbose=verbose, debug=debug, on_output=on_output)
+                
+            elif tool_name == "configure_exploit_options":
+                exploit_path = arguments.get("exploit_path", "")
+                target_info = arguments.get("target_info", {})
+                scan_results = arguments.get("scan_results", {})
+                if debug:
+                    debug_emit(f"Configuring options for exploit {exploit_path}")
+                result = self.tool_manager.configure_exploit_options(exploit_path, target_info, scan_results, verbose=verbose, debug=debug, on_output=on_output)
+                
+            elif tool_name == "check_rce_success":
+                execution_output = arguments.get("execution_output", "")
+                module_instance = arguments.get("module_instance", {})
+                if debug:
+                    debug_emit(f"Checking RCE success from execution output")
+                result = self.tool_manager.check_rce_success(execution_output, module_instance, verbose=verbose, debug=debug, on_output=on_output)
+                
+            elif tool_name == "create_interactive_session":
+                session_id = arguments.get("session_id", "")
+                target = arguments.get("target", "")
+                session_type = arguments.get("session_type", "shell")
+                if debug:
+                    debug_emit(f"Creating interactive session {session_id} for {target}")
+                result = self.tool_manager.create_interactive_session(session_id, target, session_type, verbose=verbose, debug=debug, on_output=on_output)
                 
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
