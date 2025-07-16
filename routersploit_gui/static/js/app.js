@@ -42,6 +42,9 @@ class RouterSploitGUI {
         try {
             console.log('🔧 Initializing core functionality...');
             
+            // Test basic DOM access first
+            this.testDOMAccess();
+            
             // Initialize Socket.IO connection
             this.initializeSocket();
             
@@ -61,6 +64,37 @@ class RouterSploitGUI {
         } catch (error) {
             console.error('❌ Failed to initialize core functionality:', error);
             this.showCriticalError('Failed to initialize application: ' + error.message);
+        }
+    }
+    
+    testDOMAccess() {
+        console.log('🧪 Testing DOM access...');
+        
+        const elements = {
+            'startAutoOwnBtn': document.getElementById('startAutoOwnBtn'),
+            'autoOwnTarget': document.getElementById('autoOwnTarget'),
+            'openaiApiKey': document.getElementById('openaiApiKey'),
+            'saveApiKeyBtn': document.getElementById('saveApiKeyBtn'),
+            'moduleTree': document.getElementById('moduleTree'),
+            'runBtn': document.getElementById('runBtn'),
+            'statusBadge': document.getElementById('statusBadge'),
+            'moduleInfo': document.getElementById('moduleInfo'),
+            'noModuleSelected': document.getElementById('noModuleSelected')
+        };
+        
+        console.log('🔍 Element availability:', elements);
+        
+        let missing = [];
+        for (const [name, element] of Object.entries(elements)) {
+            if (!element) {
+                missing.push(name);
+            }
+        }
+        
+        if (missing.length > 0) {
+            console.warn('⚠️ Missing elements:', missing);
+        } else {
+            console.log('✅ All required elements found');
         }
     }
 
@@ -791,21 +825,32 @@ class RouterSploitGUI {
     }
     
     toggleCategory(categoryId, toggleElement) {
+        console.log(`🔄 Toggle category: ${categoryId}`);
+        
         const container = document.getElementById(categoryId);
         const chevron = toggleElement.querySelector('i');
         const categoryNode = toggleElement.closest('.tree-node.category');
         
+        if (!container) {
+            console.warn(`⚠️ Category container not found: ${categoryId}`);
+            return;
+        }
+        
         if (container.style.display === 'none') {
             // Expand
+            console.log(`📁 Expanding category: ${categoryId}`);
             container.style.display = 'block';
             chevron.className = 'fas fa-chevron-down';
             categoryNode.classList.add('expanded');
         } else {
             // Collapse
+            console.log(`📁 Collapsing category: ${categoryId}`);
             container.style.display = 'none';
             chevron.className = 'fas fa-chevron-right';
             categoryNode.classList.remove('expanded');
         }
+        
+        console.log(`✅ Category toggle completed for: ${categoryId}`);
     }
     
     getCategoryBadge(category) {
