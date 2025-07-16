@@ -77,6 +77,11 @@ class RouterSploitWebGUI:
         def index() -> str:
             """Main page."""
             return render_template('index.html')
+            
+        @self.app.route('/debug-test')
+        def debug_test() -> str:
+            """Debug test page for troubleshooting JavaScript issues."""
+            return render_template('debug_test.html')
         
         @self.app.route('/sw.js')
         def service_worker() -> Any:
