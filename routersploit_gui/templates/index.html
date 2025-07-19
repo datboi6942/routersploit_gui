@@ -296,6 +296,18 @@
                                                     </div>
                                                     <small class="form-text text-muted">Your key is stored locally and never sent to any server except OpenAI.</small>
                                                     
+                                                    <!-- ExploitDB API Key -->
+                                                    <label class="form-label mt-3">
+                                                        <i class="fas fa-database text-neon"></i> ExploitDB API Key (Optional):
+                                                    </label>
+                                                    <div class="input-group mb-2">
+                                                        <input type="password" id="exploitDbApiKey" class="form-control" placeholder="Optional - Leave blank to skip ExploitDB">
+                                                        <button id="saveExploitDbKeyBtn" class="btn btn-outline-primary" type="button">
+                                                            <i class="fas fa-save"></i> Save
+                                                        </button>
+                                                    </div>
+                                                    <small class="form-text text-muted">ExploitDB API key for enhanced exploit searching. If not provided, ExploitDB will be skipped.</small>
+                                                    
                                                     <div class="mt-3">
                                                         <div class="form-check">
                                                             <input class="form-check-input" type="checkbox" id="autoOwnVerbose">

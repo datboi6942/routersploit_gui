@@ -75,6 +75,8 @@ class RouterSploitGUI {
             'autoOwnTarget': document.getElementById('autoOwnTarget'),
             'openaiApiKey': document.getElementById('openaiApiKey'),
             'saveApiKeyBtn': document.getElementById('saveApiKeyBtn'),
+            'exploitDbApiKey': document.getElementById('exploitDbApiKey'),
+            'saveExploitDbKeyBtn': document.getElementById('saveExploitDbKeyBtn'),
             'moduleTree': document.getElementById('moduleTree'),
             'runBtn': document.getElementById('runBtn'),
             'statusBadge': document.getElementById('statusBadge'),
@@ -246,6 +248,18 @@ class RouterSploitGUI {
         this.socket.on('connect', () => {
             console.log('Connected to server');
             this.updateStatus('Connected', 'success');
+            
+            // CONSOLE FIX: Enable console input immediately when socket connects
+            console.log('🔧 Enabling console input after socket connection');
+            this.enableConsoleInput(true);
+            this.updateConsoleStatus('Connected', 'success');
+            
+            // Try to connect to console
+            if (this.socket && this.socket.connected) {
+                console.log('🔌 Requesting console connection...');
+                this.socket.emit('console_connect', {});
+            }
+            
             if (this.effectsManager) {
                 this.effectsManager.updateStatus('Connected', 'success');
                 this.effectsManager.playSound('success');
@@ -417,6 +431,10 @@ class RouterSploitGUI {
     initializeConsole() {
         console.log('🔧 Initializing console...');
         this.updateConsoleStatus('Connecting...', 'warning');
+        
+        // CONSOLE FIX: Enable console input by default during initialization
+        console.log('🔧 Enabling console input by default during initialization');
+        this.enableConsoleInput(true);
         
         // Connection will be attempted when the socket connects or the tab is shown.
         // This avoids race conditions.
@@ -1658,6 +1676,65 @@ Type 'help' for available offline commands.`;
                         // Restore button state
                         saveApiKeyBtn.disabled = false;
                         saveApiKeyBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+                    }
+                });
+            }
+
+            // Save ExploitDB API key button
+            const saveExploitDbKeyBtn = elements.saveExploitDbKeyBtn;
+            const exploitDbApiKeyInput = elements.exploitDbApiKey;
+            
+            if (saveExploitDbKeyBtn && exploitDbApiKeyInput) {
+                saveExploitDbKeyBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    try {
+                        const apiKey = exploitDbApiKeyInput.value.trim();
+                        
+                        // Show saving state
+                        saveExploitDbKeyBtn.disabled = true;
+                        saveExploitDbKeyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+                        
+                        // Send to backend to save ExploitDB API key
+                        const response = await fetch('/api/auto-own/set-exploitdb-key', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                api_key: apiKey || '' // Allow empty string to clear key
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok && result.status === 'success') {
+                            // Also save to localStorage as backup
+                            if (apiKey) {
+                                localStorage.setItem('exploitdb_api_key', apiKey);
+                                this.showSuccess('ExploitDB API key saved successfully!');
+                            } else {
+                                localStorage.removeItem('exploitdb_api_key');
+                                this.showSuccess('ExploitDB API key cleared - ExploitDB will be skipped');
+                            }
+                            
+                            console.log('ExploitDB API key saved to backend and localStorage');
+                            
+                            // Clear the input field for security
+                            exploitDbApiKeyInput.value = '';
+                            
+                        } else {
+                            throw new Error(result.error || 'Failed to save ExploitDB API key');
+                        }
+                        
+                    } catch (error) {
+                        console.error('Error saving ExploitDB API key:', error);
+                        this.showError('Failed to save ExploitDB API key: ' + error.message);
+                    } finally {
+                        // Restore button state
+                        saveExploitDbKeyBtn.disabled = false;
+                        saveExploitDbKeyBtn.innerHTML = '<i class="fas fa-save"></i> Save';
                     }
                 });
             }

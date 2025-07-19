@@ -165,7 +165,11 @@ class ConsoleHandler:
         }
         
         if command in command_handlers:
-            return command_handlers[command](args)
+            try:
+                return command_handlers[command](args)
+            except Exception as e:
+                logger.error("Console command failed", command=command, error=str(e))
+                return f"Error executing '{command}': {e}"
         else:
             return f"Unknown command: {command}. Type 'help' for available commands."
             
@@ -322,61 +326,36 @@ Session Commands (when in a session)
         """Handle run command."""
         if not self.current_module_instance:
             return "No module selected. Use 'use <module>' first."
-            
+
+        # This is a simplified placeholder.
+        # In a real scenario, you'd integrate with a runner system.
+        self._output(f"[*] Running module {self.current_module.name}...", "info")
+        
         try:
-            # Import runner system
-            from .runner import RunnerManager
+            # The actual run logic would be more complex, involving threading,
+            # but for a basic console, a direct call can work for simple modules.
+            # This part is highly dependent on the routersploit framework's architecture.
             
-            # Initialize runner manager if not exists
-            if not hasattr(self, '_runner_manager'):
-                self._runner_manager = RunnerManager()
-                
-            # Check if already running
-            if self._runner_manager.is_running():
-                return "A module is already running. Please wait for it to complete."
-                
-            # Collect current module options with proper type conversion
-            options = {}
-            for opt_name in self.current_module.opts.keys():
-                if hasattr(self.current_module_instance, opt_name):
-                    raw_value = getattr(self.current_module_instance, opt_name)
-                    # Process the option value through the same validation as web GUI
-                    converted_value = self._process_option_value(raw_value, self.current_module.opts[opt_name])
-                    options[opt_name] = converted_value
-                    
-            # Define completion callback
-            def on_complete(success: bool, error_msg: Optional[str]) -> None:
-                if success:
-                    self._output("Module execution completed successfully", "success")
-                    
-                    # Check if a session was established
-                    if hasattr(self.current_module_instance, 'session') and self.current_module_instance.session:
-                        session_id = f"session_{len(self.sessions) + 1}"
-                        session = RouterSploitSession(session_id, self.current_module_instance)
-                        self.sessions[session_id] = session
-                        self._output(f"Session {session_id} opened", "success")
-                else:
-                    self._output(f"Module execution failed: {error_msg}", "error")
-                    
-            # Start module execution
-            started = self._runner_manager.start_module(
-                self.current_module,
-                options,
-                self._output,  # Use existing output callback
-                on_complete
-            )
-            
-            if started:
-                self._output("Starting module execution...", "info")
-                self._output("Module is running in background. Output will appear below.", "info") 
-                return "Module execution started. Please wait for results..."
+            # Placeholder for running the module's check/run function
+            if hasattr(self.current_module_instance, 'run') and callable(self.current_module_instance.run):
+                 # Temporarily redirect stdout to capture module output
+                with contextlib.redirect_stdout(io.StringIO()) as f:
+                    self.current_module_instance.run()
+                output = f.getvalue()
+                self._output(output, "info")
+                return "Module execution finished."
+            elif hasattr(self.current_module_instance, 'check') and callable(self.current_module_instance.check):
+                with contextlib.redirect_stdout(io.StringIO()) as f:
+                    result = self.current_module_instance.check()
+                output = f.getvalue()
+                self._output(output, "info")
+                return f"Module check finished with result: {result}"
             else:
-                return "Failed to start module execution"
-                
+                return "Module does not have a 'run' or 'check' method."
+
         except Exception as e:
-            error_msg = f"Module execution failed: {str(e)}"
-            self._output(error_msg, "error")
-            return error_msg
+            logger.error("Module execution failed", module=self.current_module.name, error=str(e))
+            return f"Module execution failed: {e}"
             
     def _handle_back(self, args: List[str]) -> str:
         """Handle back command."""

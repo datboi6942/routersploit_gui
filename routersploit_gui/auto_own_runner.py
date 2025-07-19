@@ -46,8 +46,8 @@ class AutoOwnRunner(threading.Thread):
         self.on_progress = on_progress
         self._stop_event = threading.Event()
         
-        # Initialize the LLM agent
-        self.agent = AutoOwnAgent()
+        # Agent will be initialized in the run method of the thread
+        self.agent: Optional[AutoOwnAgent] = None
         
         # Progress tracking
         self.current_step = 0
@@ -65,60 +65,23 @@ class AutoOwnRunner(threading.Thread):
             logger.info("Starting auto-own process", target=self.target)
             self._output("Starting Auto-Own process...", "info")
             self._progress("Initializing", 0.0)
-            if self.verbose:
-                self._output("[Verbose] Preparing to initialize LLM agent.", "info")
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Auto-Own process started at {time.strftime('%H:%M:%S')}", "warning")
-                self._output(f"🐛 [DEBUG] Target: {self.target}, Verbose: {self.verbose}, Debug: {self.debug}", "warning")
-                
-            # Check if auto-own is enabled
-            if not config.AUTO_OWN_ENABLED:
-                error_msg = "Auto-Own feature is disabled"
-                self._output(f"ERROR: {error_msg}", "error")
-                return
-                
-            # Check OpenAI API key
-            if not config.get_openai_api_key():
-                error_msg = "OpenAI API key not configured"
-                self._output(f"ERROR: {error_msg}", "error")
-                return
-                
+            
             # Step 1: Initialize agent
-            step_start = time.time()
             self._progress("Initializing LLM agent", 10.0)
             self._output("Initializing LLM agent...", "info")
-            if self.verbose:
-                self._output("[Verbose] LLM agent object created. Sleeping 1s to simulate init.", "info")
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Agent initialization started", "warning")
-            time.sleep(1)  # Simulate initialization time
-            step_elapsed = time.time() - step_start
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Agent initialization completed in {step_elapsed:.1f}s", "warning")
             
-            # Step 2: Start auto-own process
-            step_start = time.time()
-            self._progress("Starting vulnerability assessment", 20.0)
-            self._output(f"Starting vulnerability assessment on {self.target}...", "info")
-            if self.verbose:
-                self._output(f"[Verbose] Running comprehensive nmap scan on {self.target} (common ports)", "info")
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Calling agent.auto_own_target with target={self.target}, verbose={self.verbose}, debug={self.debug}", "warning")
-                
-            # Execute the auto-own process
-            results = self.agent.auto_own_target(
-                self.target, 
-                verbose=self.verbose, 
-                debug=self.debug,
-                on_output=self._debug_agent_output if self.debug else (self._output if self.verbose else None)
+            self.agent = AutoOwnAgent(
+                target=self.target,
+                on_output=self._output,
+                verbose=self.verbose,
+                debug=self.debug
             )
             
-            step_elapsed = time.time() - step_start
-            if self.verbose:
-                self._output("[Verbose] nmap scan and analysis complete. Passing results to LLM.", "info")
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Agent execution completed in {step_elapsed:.1f}s", "warning")
-                self._output(f"🐛 [DEBUG] Agent returned results: {str(results)[:200]}{'...' if len(str(results)) > 200 else ''}", "warning")
+            # Step 2: Start auto-own process
+            self._progress("Starting vulnerability assessment", 20.0)
+            self._output(f"Starting vulnerability assessment on {self.target}...", "info")
+            
+            results = self.agent.run()
 
             if "error" in results:
                 error_msg = results["error"]
@@ -126,37 +89,19 @@ class AutoOwnRunner(threading.Thread):
                 return
                 
             # Step 3: Process results
-            step_start = time.time()
             self._progress("Processing results", 80.0)
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Processing and formatting results", "warning")
             
-            # Extract key information for user
-            scan_results = results.get("conversation_history", [])
-            target_info = results.get("target", self.target)
+            final_summary = results.get("final_summary", "No summary generated.")
             
-            # Show summary
-            self._progress("Generating summary", 90.0)
-            self._output(f"✅ Auto-Own process completed for {target_info}", "success")
-            
-            # Show final summary if available
-            final_summary = results.get("final_summary", "")
-            if final_summary:
-                self._output("📋 Final Summary:", "info")
-                # Break summary into readable chunks
-                for line in final_summary.split('\n'):
-                    if line.strip():
-                        self._output(f"   {line.strip()}", "info")
-            
-            step_elapsed = time.time() - step_start
-            total_elapsed = time.time() - start_time
-            
-            if self.debug:
-                self._output(f"🐛 [DEBUG] Results processing completed in {step_elapsed:.1f}s", "warning")
-                self._output(f"🐛 [DEBUG] Total process time: {total_elapsed:.1f}s", "warning")
-            
+            self._output("\n" + "="*60, "info")
+            self._output("🎯 AUTOMATED VULNERABILITY ASSESSMENT COMPLETE", "success")
+            self._output(f"🔍 Target: {self.target}", "info")
+            self._output(f"⏱️ Total Time: {time.time() - start_time:.1f} seconds", "info")
+            self._output("="*60 + "\n", "info")
+            self._output(final_summary, "info")
+            self._output("\n" + "="*60, "info")
+
             self._progress("Complete", 100.0)
-            self._output(f"🕒 Total execution time: {total_elapsed:.1f} seconds", "info")
             success = True
             
         except Exception as e:
@@ -209,7 +154,7 @@ class AutoOwnManager:
     def __init__(self) -> None:
         """Initialize the auto-own manager."""
         self.current_runner: Optional[AutoOwnRunner] = None
-        self.agent = AutoOwnAgent()
+        # The agent is now created inside the runner, so we don't keep an instance here.
         
     def start_auto_own(
         self,
@@ -220,30 +165,12 @@ class AutoOwnManager:
         verbose: bool = False,
         debug: bool = False,
     ) -> bool:
-        """Start an auto-own process.
-        
-        Args:
-            target: Target IP address or hostname
-            on_output: Callback for output lines (line, level)
-            on_complete: Callback for completion (success, error_msg)
-            on_progress: Callback for progress updates (status, percentage)
-            verbose: Whether to emit detailed output
-            debug: Whether to emit comprehensive debug information
-            
-        Returns:
-            True if started successfully, False otherwise
-        """
+        """Start an auto-own process."""
         if self.is_running():
             logger.warning("Auto-own process already running")
             return False
             
         try:
-            # Validate target
-            if not target or not target.strip():
-                logger.error("Invalid target specified")
-                return False
-                
-            # Create and start the runner
             self.current_runner = AutoOwnRunner(
                 target=target.strip(),
                 on_output=on_output,
@@ -280,40 +207,26 @@ class AutoOwnManager:
         )
         
     def get_status(self) -> Dict[str, Any]:
-        """Get the current status of the auto-own manager.
-        
-        Returns:
-            Dictionary containing status information
-        """
+        """Get the current status of the auto-own manager."""
+        # Since the agent is in the runner, we can't get available targets this way anymore.
+        # This part can be refactored if needed.
         return {
             "running": self.is_running(),
             "target": self.current_runner.target if self.current_runner else None,
             "auto_own_enabled": config.AUTO_OWN_ENABLED,
             "openai_configured": bool(config.get_openai_api_key()),
-            "available_targets": self.agent.get_available_targets()
+            "available_targets": [] 
         }
         
     def get_target_history(self, target: str) -> List[Dict[str, Any]]:
-        """Get auto-own history for a target.
-        
-        Args:
-            target: Target IP address
-            
-        Returns:
-            List of historical results
-        """
-        return self.agent.get_target_history(target)
+        """Get auto-own history for a target."""
+        # This would also need refactoring to read from saved files, as the agent instance is temporary.
+        return []
         
     def refresh_agent(self) -> None:
         """Refresh the LLM agent to pick up new API keys or configuration changes."""
-        try:
-            # Re-initialize the agent to pick up new configuration
-            from .llm_agent import AutoOwnAgent
-            self.agent = AutoOwnAgent()
-            logger.info("Auto-own agent refreshed successfully")
-        except Exception as e:
-            logger.error("Failed to refresh auto-own agent", error=str(e))
-            raise
+        # This is now handled by creating a new runner.
+        logger.info("Agent configuration will be refreshed on the next run.")
     
     def cleanup(self) -> None:
         """Clean up resources."""

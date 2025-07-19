@@ -8,11 +8,13 @@ import socket
 import threading
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 
+import json
 import nmap
 import requests
 import structlog
+import urllib.parse
 
 from . import config
 
@@ -592,33 +594,21 @@ class NmapScanner:
 
         scan_start_time = time.time()
         try:
-            # Handle common ports selection
+            # Handle port selection with optimized settings
             if ports == "common":
-                # Comprehensive list of common ports for vulnerability assessment
-                common_ports_raw = [
-                    # Very common ports
-                    "21", "22", "23", "25", "53", "80", "110", "111", "135", "139", "143", "443", "445", "993", "995",
-                    # Database ports
-                    "1433", "1521", "3306", "3389", "5432", "5984", "6379", "7000", "7001", "8086", "9042", "9200", "9300", "11211", "27017", "27018", "27019", "28017",
-                    # Web services
-                    "81", "591", "593", "832", "981", "1010", "1311", "2082", "2083", "2087", "2095", "2096", "2480", "3000", "3128", "3333", "4243", "4567", "4711", "4712", "4993", "5104", "5108", "5800", "6543", "7396", "7474", "8000", "8001", "8008", "8014", "8042", "8069", "8080", "8081", "8088", "8090", "8091", "8118", "8123", "8172", "8222", "8243", "8280", "8281", "8333", "8443", "8500", "8834", "8880", "8888", "8983", "9000", "9043", "9060", "9080", "9090", "9091", "9443", "9800", "9943", "9980", "9981", "12443", "16080", "18091", "18092", "20720",
-                    # Remote access  
-                    "179", "389", "636", "989", "990", "992", "1723", "1755", "1761", "2000", "2001", "2049", "2121", "2717", "4899", "5060", "5061", "5357", "5500", "5631", "5666", "5900", "5901", "5902", "5903", "6000", "6001", "6646", "7070", "8200", "8300", "8800", "8843", "9100", "9999", "10000", "32768", "49152", "49153", "49154", "49155", "49156", "49157",
-                    # Additional common high ports
-                    "4000", "6463", "7687", "8461", "10001", "10002", "10003", "10004", "10009", "10010", "10012", "10024", "10025", "10082", "10180", "10215", "10443", "10566", "10616", "10617", "10621", "10626", "10628", "10629", "10778", "11110", "11111", "11434", "11967", "12000", "12001", "12174", "12265", "12345", "13456", "13722", "13782", "13783", "14000", "14238", "14441", "14442", "15000", "15002", "15003", "15004", "15660", "15742", "16000", "16001", "16012", "16016", "16018", "16113", "16992", "16993", "17877", "17988", "18040", "18101", "18988", "19101", "19283", "19315", "19350", "19780", "19801", "19842", "20000", "20005", "20031", "20221", "20222", "20828", "21571", "22939", "23502", "24438", "24439", "24444", "24800", "25001", "25734", "25735", "26214", "27000", "27352", "27353", "27355", "27356", "27715", "28201", "30000", "30718", "30951", "31038", "31337", "32769", "32770", "32771", "32772", "32773", "32774", "32775", "32776", "32777", "32778", "32779", "32780", "32781", "32782", "32783", "32784", "32785", "33354", "33899", "34571", "34572", "34573", "35500", "35727", "38292", "40193", "40911", "41511", "42510", "44176", "44442", "44443", "44501", "45100", "48080", "49158", "49159", "49160", "49161", "49163", "49165", "49167", "49175", "49176", "65000", "65129", "65389"
-                ]
-                # Remove duplicates by converting to set and back to list, then sort
-                common_ports = sorted(set(common_ports_raw), key=int)
-                ports_arg = ",".join(common_ports)
+                # Use nmap's top 1000 ports for fast and effective scanning
                 if verbose and on_output:
-                    on_output(f"[Verbose] Using comprehensive common ports scan ({len(common_ports)} ports)", "info")
+                    on_output(f"[Verbose] Using nmap's top 1000 most common ports for fast scanning", "info")
+                cmd = ["nmap", target, "-sV", "-sC", "-T5", "-v", "--top-ports", "1000", "-oX", "-"]
+            elif ports == "1-65535":
+                # For full port scans, use top ports first for better reliability
+                if verbose and on_output:
+                    on_output(f"[Verbose] Full port range requested - using top 1000 ports for reliability", "info")
+                cmd = ["nmap", target, "-sV", "-sC", "-T5", "-v", "--top-ports", "1000", "-oX", "-"]
             else:
-                ports_arg = ports
                 if verbose and on_output:
                     on_output(f"[Verbose] Using custom port range: {ports}", "info")
-            
-            # Use more reasonable nmap command for faster scanning
-            cmd = ["nmap", target, "-sV", "-sC", "-T4", "-v", f"-p{ports_arg}", "-oX", "-"]
+                cmd = ["nmap", target, "-sV", "-sC", "-T5", "-v", f"-p{ports}", "-oX", "-"]
             
             # If scanning localhost, exclude port 5000 to avoid interfering with the web server
             if target in ["127.0.0.1", "localhost"]:
@@ -626,12 +616,12 @@ class NmapScanner:
                 if verbose and on_output:
                     on_output(f"[Verbose] Excluding port 5000 to avoid interfering with web server", "info")
             
-            # Add reasonable timeouts (reduced from previous version)
-            cmd.extend(["--host-timeout", "300s", "--max-rtt-timeout", "2s", "--max-retries", "3"])
+            # Add optimized timeout settings for better reliability
+            cmd.extend(["--host-timeout", "600s", "--max-rtt-timeout", "5s", "--max-retries", "2"])
 
             if verbose and on_output:
                 on_output(f"[Verbose] Running command: {' '.join(cmd)}", "info")
-                on_output(f"[Verbose] Using T4 timing and scanning ports {ports}", "info")
+                on_output(f"[Verbose] Using T5 timing for fast and reliable scanning", "info")
             if debug:
                 debug_emit(f"Constructed nmap command: {' '.join(cmd)}")
 
@@ -1140,11 +1130,13 @@ class ExploitDBWrapper:
     
     def __init__(self) -> None:
         """Initialize the Exploit-DB wrapper."""
-        self.api_key = config.EXPLOIT_DB_API_KEY
+        # Get API key from config file (dynamically)
+        self.api_key = config.get_exploitdb_api_key()
         self.base_url = "https://exploit-db.com/api/v1"
         self.search_cache = {}  # Cache search results
         self.retry_count = 3
         self.retry_delay = 2
+        self.enabled = bool(self.api_key.strip())  # Only enable if API key is provided
         
     def search_exploits(self, service: str, version: str = "", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> List[Dict[str, Any]]:
         """Search Exploit-DB for exploits with retry logic and caching.
@@ -1161,6 +1153,14 @@ class ExploitDBWrapper:
         def debug_emit(line: str, level: str = "info"):
             if debug and on_output:
                 on_output(f"🐛 [DEBUG-EDB] {line}", "warning" if level == "info" else level)
+        
+        # Check if ExploitDB is enabled (has API key)
+        if not self.enabled:
+            if verbose and on_output:
+                on_output("[Verbose] ExploitDB API key not configured - skipping ExploitDB search", "warning")
+            if debug:
+                debug_emit("ExploitDB search skipped - no API key configured")
+            return []  # Return empty list gracefully
                 
         # Check cache first
         cache_key = f"{service}:{version}"
@@ -1336,6 +1336,211 @@ class ExploitDBWrapper:
             return []
 
 
+class WebSearchWrapper:
+    """Wrapper for web search functionality to find vulnerability information."""
+    
+    def __init__(self) -> None:
+        """Initialize the web search wrapper."""
+        self.search_cache = {}  # Cache search results
+        self.timeout = 10
+        self.user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        
+    def search_vulnerabilities(self, service: str, version: str = "", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> List[Dict[str, Any]]:
+        """Search the web for vulnerability information about a service and version.
+        
+        Args:
+            service: Service name (e.g., "apache", "openssh")
+            version: Version string (optional)
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            List of vulnerability information found
+        """
+        def debug_emit(line: str, level: str = "info"):
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG-WEB] {line}", "warning" if level == "info" else level)
+        
+        # Check cache first
+        cache_key = f"{service}:{version}"
+        if cache_key in self.search_cache:
+            if debug:
+                debug_emit(f"Using cached web search results for {cache_key}")
+            return self.search_cache[cache_key]
+        
+        try:
+            if verbose and on_output:
+                on_output(f"[Verbose] 🌐 Searching web for {service} {version} vulnerabilities", "info")
+            logger.info("Searching web for vulnerabilities", service=service, version=version)
+            
+            # Use the detailed service string as the primary query
+            search_query = f"{service} vulnerability CVE"
+            
+            if debug:
+                debug_emit(f"Searching: {search_query}")
+            
+            vulnerabilities = []
+            search_results = self._search_duckduckgo(search_query, debug=debug, on_output=on_output)
+            
+            for result in search_results:
+                vuln_info = self._extract_vulnerability_info(result, service, version)
+                if vuln_info:
+                    vulnerabilities.append(vuln_info)
+
+            # Remove duplicates based on CVE ID or title
+            unique_vulns = []
+            seen_ids = set()
+            for vuln in vulnerabilities:
+                vuln_id = vuln.get('cve_id') or vuln.get('title', '')
+                if vuln_id not in seen_ids:
+                    seen_ids.add(vuln_id)
+                    unique_vulns.append(vuln)
+            
+            # Cache results
+            self.search_cache[cache_key] = unique_vulns
+            
+            if verbose and on_output:
+                on_output(f"[Verbose] 🌐 Found {len(unique_vulns)} vulnerability entries from web search", "info")
+            
+            if debug:
+                debug_emit(f"Web search completed: {len(unique_vulns)} unique vulnerabilities found")
+                for vuln in unique_vulns[:3]:  # Show first 3
+                    debug_emit(f"  • {vuln.get('title', 'Unknown')}: {vuln.get('cve_id', 'No CVE')}")
+            
+            return unique_vulns
+            
+        except Exception as e:
+            error_msg = f"Web vulnerability search failed: {str(e)}"
+            if debug:
+                debug_emit(f"ERROR: {error_msg}")
+            logger.warning("Web vulnerability search failed", service=service, error=str(e))
+            return []
+    
+    def _search_duckduckgo(self, query: str, debug: bool = False, on_output: Optional[Any] = None) -> List[Dict[str, Any]]:
+        """Search DuckDuckGo for the given query.
+        
+        Args:
+            query: Search query
+            debug: Whether to emit debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            List of search results
+        """
+        def debug_emit(line: str, level: str = "info"):
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG-DDG] {line}", "warning" if level == "info" else level)
+        
+        try:
+            # DuckDuckGo instant answers API (no rate limits, no API key)
+            encoded_query = urllib.parse.quote_plus(query)
+            url = f"https://api.duckduckgo.com/?q={encoded_query}&format=json&no_html=1&skip_disambig=1"
+            
+            headers = {
+                'User-Agent': self.user_agent
+            }
+            
+            if debug:
+                debug_emit(f"DuckDuckGo API request: {url}")
+            
+            response = requests.get(url, headers=headers, timeout=self.timeout)
+            response.raise_for_status()
+            
+            try:
+                data = response.json()
+            except json.JSONDecodeError:
+                if debug:
+                    debug_emit(f"DuckDuckGo returned non-JSON response: {response.text[:100]}...")
+                return []
+            
+            results = []
+            
+            # Extract from RelatedTopics
+            for topic in data.get('RelatedTopics', []):
+                if isinstance(topic, dict) and 'Text' in topic:
+                    results.append({
+                        'title': topic.get('Text', '')[:100],
+                        'snippet': topic.get('Text', ''),
+                        'url': topic.get('FirstURL', ''),
+                        'source': 'duckduckgo'
+                    })
+            
+            # Extract from Abstract
+            if data.get('Abstract'):
+                results.append({
+                    'title': data.get('AbstractText', '')[:100],
+                    'snippet': data.get('Abstract', ''),
+                    'url': data.get('AbstractURL', ''),
+                    'source': 'duckduckgo'
+                })
+            
+            if debug:
+                debug_emit(f"DuckDuckGo returned {len(results)} results")
+            
+            return results[:10]  # Limit results
+            
+        except Exception as e:
+            if debug:
+                debug_emit(f"DuckDuckGo search failed: {e}")
+            return []
+    
+    def _extract_vulnerability_info(self, search_result: Dict[str, Any], service: str, version: str) -> Optional[Dict[str, Any]]:
+        """Extract vulnerability information from a search result.
+        
+        Args:
+            search_result: Search result dictionary
+            service: Service name being searched
+            version: Version being searched
+            
+        Returns:
+            Vulnerability information if found, None otherwise
+        """
+        try:
+            text = f"{search_result.get('title', '')} {search_result.get('snippet', '')}".lower()
+            
+            # Look for CVE patterns
+            cve_pattern = r'cve-\d{4}-\d{4,7}'
+            cves = re.findall(cve_pattern, text, re.IGNORECASE)
+            
+            # Look for vulnerability keywords
+            vuln_keywords = ['vulnerability', 'exploit', 'security', 'flaw', 'bug', 'weakness', 'cve', 'advisory']
+            has_vuln_keywords = any(keyword in text for keyword in vuln_keywords)
+            
+            # Look for severity keywords
+            severity_keywords = {
+                'critical': ['critical', 'severe', 'high'],
+                'high': ['high', 'important'],
+                'medium': ['medium', 'moderate'],
+                'low': ['low', 'minor']
+            }
+            
+            severity = 'unknown'
+            for sev_level, keywords in severity_keywords.items():
+                if any(keyword in text for keyword in keywords):
+                    severity = sev_level
+                    break
+            
+            # Only return if it looks like vulnerability information
+            if cves or has_vuln_keywords:
+                return {
+                    'title': search_result.get('title', '')[:200],
+                    'description': search_result.get('snippet', '')[:500],
+                    'url': search_result.get('url', ''),
+                    'cve_id': cves[0].upper() if cves else None,
+                    'all_cves': [cve.upper() for cve in cves],
+                    'severity': severity,
+                    'service': service,
+                    'version': version,
+                    'source': 'web_search'
+                }
+                
+        except Exception as e:
+            logger.warning("Failed to extract vulnerability info", error=str(e))
+            
+        return None
+
+
 class VulnerabilityAnalyzer:
     """Analyzes scan results to identify potential vulnerabilities."""
     
@@ -1343,6 +1548,7 @@ class VulnerabilityAnalyzer:
         """Initialize the vulnerability analyzer."""
         self.msf_wrapper = MetasploitWrapper()
         self.exploit_db_wrapper = ExploitDBWrapper()
+        self.web_search_wrapper = WebSearchWrapper()
         
     def analyze_scan_results(self, scan_results: Dict[str, Any], verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Analyze nmap scan results to identify vulnerabilities.
@@ -1373,16 +1579,28 @@ class VulnerabilityAnalyzer:
                 "enhanced_services": []
             }
             
+            # Get all open ports for comprehensive analysis
+            open_ports = [port for port in scan_results.get("ports", []) if port.get("state") == "open"]
+            if verbose and on_output:
+                on_output(f"[Verbose] 🔍 COMPREHENSIVE ANALYSIS: Found {len(open_ports)} open ports to analyze", "info")
+                for port in open_ports:
+                    service_info = f"{port.get('service', 'unknown')} {port.get('version', '')}".strip()
+                    on_output(f"[Verbose]   • Port {port['port']}: {service_info}", "info")
+            
+            if debug:
+                debug_emit(f"Starting comprehensive analysis of {len(open_ports)} open ports")
+                for port in open_ports:
+                    debug_emit(f"Port {port['port']}: {port.get('service', 'unknown')} {port.get('version', '')}")
+            
             # Analyze each open port
-            for port_info in scan_results.get("ports", []):
-                if port_info.get("state") == "open":
-                    service = port_info.get("service", "")
-                    version = port_info.get("version", "")
-                    product = port_info.get("product", "")
-                    
-                    if verbose and on_output:
-                        enhanced_text = " (enhanced by netcat)" if port_info.get("enhanced_by_netcat") else ""
-                        on_output(f"[Verbose] Analyzing port {port_info['port']}: {service} {version} {product}{enhanced_text}", "info")
+            for port_index, port_info in enumerate(open_ports, 1):
+                service = port_info.get("service", "")
+                version = port_info.get("version", "")
+                product = port_info.get("product", "")
+                
+                if verbose and on_output:
+                    enhanced_text = " (enhanced by netcat)" if port_info.get("enhanced_by_netcat") else ""
+                    on_output(f"[Verbose] 🔎 Analyzing port {port_index}/{len(open_ports)} - Port {port_info['port']}: {service} {version} {product}{enhanced_text}", "info")
                     
                     # Track netcat-enhanced services
                     if port_info.get("enhanced_by_netcat"):
@@ -1393,38 +1611,114 @@ class VulnerabilityAnalyzer:
                             "banner": port_info.get("banner", "")
                         })
                     
-                    # Search for exploits only for known services
-                    if service and service != "unknown":
-                        if verbose and on_output:
-                            on_output(f"[Verbose] Searching for exploits for service: {service}", "info")
-                            
-                        # Search Metasploit (with timeout protection)
-                        try:
-                            msf_exploits = self.msf_wrapper.search_exploits(service, version, verbose=verbose, debug=debug, on_output=on_output)
-                            for exploit in msf_exploits:
-                                analysis["exploits_found"].append({
-                                    "source": "metasploit",
-                                    "port": port_info["port"],
-                                    "service": service,
-                                    "exploit": exploit
-                                })
-                        except Exception as e:
-                            if debug:
-                                debug_emit(f"Metasploit search failed: {e}")
+                # Search for vulnerabilities and exploits only for known services
+                if service and service != "unknown":
+                    if verbose and on_output:
+                        on_output(f"[Verbose] 🔍 COMPREHENSIVE RESEARCH: Port {port_info['port']} - Researching {service} {version}", "info")
+                    if debug:
+                        debug_emit(f"Starting comprehensive research for port {port_info['port']}: {service} {version}")
+                    
+                    # Step 1: Web research for vulnerabilities (ENHANCED!)
+                    if verbose and on_output:
+                        on_output(f"[Verbose] 🌐 WEB RESEARCH: Searching internet for {service} {version} vulnerabilities", "info")
+                    try:
+                        # Construct intelligent search queries based on exact service info
+                        search_queries = self._build_intelligent_search_queries(port_info, debug, debug_emit)
                         
-                        # Search Exploit-DB (with timeout protection)
-                        try:
-                            edb_exploits = self.exploit_db_wrapper.search_exploits(service, version, verbose=verbose, debug=debug, on_output=on_output)
-                            for exploit in edb_exploits:
-                                analysis["exploits_found"].append({
-                                    "source": "exploit-db",
-                                    "port": port_info["port"],
-                                    "service": service,
-                                    "exploit": exploit
-                                })
-                        except Exception as e:
+                        all_web_vulns = []
+                        for query in search_queries:
                             if debug:
-                                debug_emit(f"Exploit-DB search failed: {e}")
+                                debug_emit(f"🔍 Executing web search: '{query}'")
+                            
+                            web_vulns = self.web_search_wrapper.search_vulnerabilities(
+                                query, 
+                                version, 
+                                verbose=verbose, 
+                                debug=debug, 
+                                on_output=on_output
+                            )
+                            all_web_vulns.extend(web_vulns)
+                        
+                        # Process and prioritize web vulnerability findings
+                        processed_vulns = self._process_web_vulnerability_results(
+                            all_web_vulns, port_info, debug, debug_emit
+                        )
+                        
+                        for vuln in processed_vulns:
+                            analysis["vulnerabilities"].append({
+                                "type": "web_research_enhanced",
+                                "port": port_info["port"],
+                                "service": service,
+                                "version": version,
+                                "vulnerability": vuln,
+                                "severity": vuln.get("severity", "unknown"),
+                                "cve_id": vuln.get("cve_id"),
+                                "description": vuln.get("description", ""),
+                                "source": "web_search_enhanced",
+                                "exploit_available": vuln.get("exploit_available", False),
+                                "metasploit_module": vuln.get("metasploit_module"),
+                                "confidence": vuln.get("confidence", "low")
+                            })
+                            
+                    except Exception as e:
+                        if debug:
+                            debug_emit(f"Enhanced web vulnerability search failed: {e}")
+                    
+                    # Step 2: Search Metasploit with intelligent mapping
+                    if verbose and on_output:
+                        on_output(f"[Verbose] 🎯 METASPLOIT SEARCH: Looking for {service} {version} exploits", "info")
+                    try:
+                        # Enhanced Metasploit search with multiple search terms
+                        msf_search_terms = self._build_metasploit_search_terms(port_info, debug, debug_emit)
+                        
+                        all_msf_exploits = []
+                        for search_term in msf_search_terms:
+                            if debug:
+                                debug_emit(f"🎯 Metasploit search term: '{search_term}'")
+                            
+                            msf_exploits = self.msf_wrapper.search_exploits(
+                                search_term, version, verbose=verbose, debug=debug, on_output=on_output
+                            )
+                            all_msf_exploits.extend(msf_exploits)
+                        
+                        # Remove duplicates and prioritize
+                        unique_exploits = self._deduplicate_and_prioritize_exploits(all_msf_exploits, port_info)
+                        
+                        for exploit in unique_exploits:
+                            analysis["exploits_found"].append({
+                                "source": "metasploit_enhanced",
+                                "port": port_info["port"],
+                                "service": service,
+                                "exploit": exploit,
+                                "priority": exploit.get("priority", "medium"),
+                                "confidence": exploit.get("confidence", "medium")
+                            })
+                            
+                    except Exception as e:
+                        if debug:
+                            debug_emit(f"Enhanced Metasploit search failed: {e}")
+                    
+                    # Step 3: Search Exploit-DB (with timeout protection)
+                    if verbose and on_output:
+                        on_output(f"[Verbose] 💾 EXPLOITDB SEARCH: Looking for {service} {version} exploits", "info")
+                    try:
+                        edb_exploits = self.exploit_db_wrapper.search_exploits(service, version, verbose=verbose, debug=debug, on_output=on_output)
+                        for exploit in edb_exploits:
+                            analysis["exploits_found"].append({
+                                "source": "exploit-db",
+                                "port": port_info["port"],
+                                "service": service,
+                                "exploit": exploit
+                            })
+                    except Exception as e:
+                        if debug:
+                            debug_emit(f"Exploit-DB search failed: {e}")
+                
+                else:
+                    if verbose and on_output:
+                        on_output(f"[Verbose] ⚠️  Skipping port {port_info['port']} - service unknown or not identified", "warning")
+                    if debug:
+                        debug_emit(f"Skipping research for port {port_info['port']}: service={service}")
                     
                     # Enhanced vulnerability detection
                     vulnerabilities = self._detect_vulnerabilities(port_info, verbose=verbose, debug=debug, on_output=on_output)
@@ -1453,7 +1747,7 @@ class VulnerabilityAnalyzer:
             return {"error": error_msg}
     
     def _detect_vulnerabilities(self, port_info: Dict[str, Any], verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> List[Dict[str, Any]]:
-        """Detect vulnerabilities for a specific port."""
+        """Detect vulnerabilities for a specific port using intelligent analysis."""
         def debug_emit(line: str, level: str = "info"):
             if debug and on_output:
                 on_output(f"🐛 [DEBUG-DETECT] {line}", "warning" if level == "info" else level)
@@ -1462,123 +1756,301 @@ class VulnerabilityAnalyzer:
         service = port_info.get("service", "").lower()
         version = port_info.get("version", "")
         port = port_info.get("port", "")
+        product = port_info.get("product", "")
         
-        # Enhanced vulnerability detection patterns
-        vuln_patterns = {
-            "ssh": {
-                "versions": ["2.0", "1.99", "1.9"],
-                "vuln_type": "weak_protocol",
-                "description": "Old SSH protocol version detected",
-                "severity": "medium"
-            },
-            "ftp": {
-                "always_vulnerable": True,
-                "vuln_type": "cleartext_auth",
-                "description": "FTP transmits credentials in cleartext",
-                "severity": "medium"
-            },
-            "telnet": {
-                "always_vulnerable": True,
-                "vuln_type": "cleartext_auth",
-                "description": "Telnet transmits all data in cleartext",
-                "severity": "high"
-            },
-            "http": {
-                "check_version": True,
-                "vuln_type": "web_service",
-                "description": "Web service detected - potential for web-based attacks",
-                "severity": "low"
-            },
-            "mysql": {
-                "default_ports": ["3306"],
-                "vuln_type": "database_exposure",
-                "description": "Database service exposed to network",
-                "severity": "high"
-            },
-            "postgresql": {
-                "default_ports": ["5432"],
-                "vuln_type": "database_exposure",
-                "description": "Database service exposed to network",
-                "severity": "high"
-            },
-            "rdp": {
-                "default_ports": ["3389"],
-                "vuln_type": "remote_desktop",
-                "description": "Remote Desktop Protocol exposed",
-                "severity": "high"
-            },
-            "vnc": {
-                "default_ports": ["5900"],
-                "vuln_type": "remote_desktop",
-                "description": "VNC remote desktop exposed",
-                "severity": "high"
-            }
-        }
+        if debug:
+            debug_emit(f"🎯 INTELLIGENT VULNERABILITY DETECTION for port {port}")
+            debug_emit(f"Service: {service}, Version: {version}, Product: {product}")
         
-        if service in vuln_patterns:
-            pattern = vuln_patterns[service]
-            
-            if pattern.get("always_vulnerable"):
-                vulnerabilities.append({
-                    "type": pattern["vuln_type"],
-                    "port": port,
-                    "service": service,
-                    "description": pattern["description"],
-                    "severity": pattern["severity"],
-                    "version": version
-                })
-                if debug:
-                    debug_emit(f"Always vulnerable service detected: {service}")
-            
-            elif pattern.get("versions") and version:
-                for vuln_version in pattern["versions"]:
-                    if vuln_version in version:
-                        vulnerabilities.append({
-                            "type": pattern["vuln_type"],
-                            "port": port,
-                            "service": service,
-                            "description": f"{pattern['description']} (version {version})",
-                            "severity": pattern["severity"],
-                            "version": version
-                        })
-                        if debug:
-                            debug_emit(f"Vulnerable version detected: {service} {version}")
-            
-            elif pattern.get("check_version") or pattern.get("default_ports"):
-                vulnerabilities.append({
-                    "type": pattern["vuln_type"],
-                    "port": port,
-                    "service": service,
-                    "description": pattern["description"],
-                    "severity": pattern["severity"],
-                    "version": version
-                })
-                if debug:
-                    debug_emit(f"Service vulnerability detected: {service}")
-        
-        # Check for common weak authentication scenarios
-        if service in ["ssh", "ftp", "telnet", "mysql", "postgresql"]:
+        # CRITICAL: Check for EternalBlue (MS17-010) - Windows SMB vulnerability
+        if self._check_eternalblue_vulnerability(port_info, debug, debug_emit):
             vulnerabilities.append({
-                "type": "weak_auth_potential",
+                "type": "eternalblue_ms17_010",
                 "port": port,
                 "service": service,
-                "description": f"Service {service} may have weak authentication",
-                "severity": "medium",
-                "version": version
+                "description": "🚨 CRITICAL: EternalBlue (MS17-010) - Windows SMB Remote Code Execution",
+                "severity": "critical",
+                "cve_id": "CVE-2017-0144",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": "exploit/windows/smb/ms17_010_eternalblue",
+                "confidence": "high"
             })
+            if debug:
+                debug_emit("🚨 ETERNALBLUE VULNERABILITY DETECTED!")
         
-        # Check banner for specific vulnerability indicators
-        banner = port_info.get("banner", "")
-        if banner:
-            if "default" in banner.lower() or "admin" in banner.lower():
+        # CRITICAL: Check for other well-known Windows vulnerabilities
+        windows_vulns = self._check_windows_vulnerabilities(port_info, debug, debug_emit)
+        vulnerabilities.extend(windows_vulns)
+        
+        # Enhanced service-specific vulnerability detection
+        service_vulns = self._check_service_specific_vulnerabilities(port_info, debug, debug_emit)
+        vulnerabilities.extend(service_vulns)
+        
+        # Check for default/weak authentication
+        auth_vulns = self._check_authentication_vulnerabilities(port_info, debug, debug_emit)
+        vulnerabilities.extend(auth_vulns)
+        
+        # Check banner for vulnerability indicators
+        banner_vulns = self._check_banner_vulnerabilities(port_info, debug, debug_emit)
+        vulnerabilities.extend(banner_vulns)
+        
+        if debug and vulnerabilities:
+            debug_emit(f"🎯 Found {len(vulnerabilities)} vulnerabilities for port {port}")
+            for vuln in vulnerabilities:
+                debug_emit(f"  • {vuln['description']} (Severity: {vuln['severity']})")
+        
+        return vulnerabilities
+    
+    def _check_eternalblue_vulnerability(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> bool:
+        """Check for EternalBlue (MS17-010) vulnerability."""
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        product = port_info.get("product", "")
+        
+        # Check for SMB ports
+        if port not in ["445", "139"]:
+            return False
+            
+        # Check for SMB-related services
+        if service not in ["microsoft-ds", "netbios-ssn", "smb"]:
+            return False
+        
+        if debug:
+            debug_emit(f"🔍 Checking EternalBlue for SMB service on port {port}")
+        
+        # Check for Windows indicators in product string
+        windows_indicators = [
+            "windows 7", "windows server 2008", "windows vista", 
+            "windows xp", "windows server 2003", "windows 2000",
+            "microsoft windows", "windows"
+        ]
+        
+        product_lower = product.lower() if product else ""
+        is_windows = any(indicator in product_lower for indicator in windows_indicators)
+        
+        if debug:
+            debug_emit(f"🔍 Product string: '{product}' - Windows detected: {is_windows}")
+        
+        # EternalBlue affects unpatched Windows systems
+        # If we detect Windows SMB, it's likely vulnerable unless proven otherwise
+        if is_windows:
+            if debug:
+                debug_emit("🚨 Windows SMB detected - likely EternalBlue vulnerable!")
+            return True
+        
+        # Even if Windows not explicitly detected, SMB on 445/139 is suspicious
+        if service in ["microsoft-ds", "netbios-ssn"]:
+            if debug:
+                debug_emit("⚠️ SMB service detected - potential EternalBlue target")
+            return True
+            
+        return False
+    
+    def _check_windows_vulnerabilities(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[Dict[str, Any]]:
+        """Check for Windows-specific vulnerabilities."""
+        vulnerabilities = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        product = port_info.get("product", "")
+        version = port_info.get("version", "")
+        
+        product_lower = product.lower() if product else ""
+        
+        # MS08-067 (Conficker) - affects older Windows
+        if ("windows" in product_lower and 
+            any(old_win in product_lower for old_win in ["xp", "2003", "2000", "vista"])):
+            vulnerabilities.append({
+                "type": "ms08_067_conficker",
+                "port": port,
+                "service": service,
+                "description": "🚨 CRITICAL: MS08-067 (Conficker) - Windows Server Service RCE",
+                "severity": "critical",
+                "cve_id": "CVE-2008-4250",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": "exploit/windows/smb/ms08_067_netapi",
+                "confidence": "high"
+            })
+            if debug:
+                debug_emit("🚨 MS08-067 (Conficker) vulnerability detected!")
+        
+        # RDP vulnerabilities
+        if port == "3389" or service == "rdp":
+            # BlueKeep (CVE-2019-0708)
+            if "windows 7" in product_lower or "windows server 2008" in product_lower:
                 vulnerabilities.append({
-                    "type": "default_credentials",
+                    "type": "bluekeep_cve_2019_0708",
                     "port": port,
                     "service": service,
-                    "description": "Service banner suggests default credentials",
-                    "severity": "high",
-                    "banner": banner[:100]
+                    "description": "🚨 CRITICAL: BlueKeep (CVE-2019-0708) - RDP Remote Code Execution",
+                    "severity": "critical",
+                    "cve_id": "CVE-2019-0708",
+                    "version": version,
+                    "exploit_available": True,
+                    "metasploit_module": "exploit/windows/rdp/cve_2019_0708_bluekeep_rce",
+                    "confidence": "high"
                 })
+                if debug:
+                    debug_emit("🚨 BlueKeep vulnerability detected!")
+            
+            # General RDP exposure
+            vulnerabilities.append({
+                "type": "rdp_exposure",
+                "port": port,
+                "service": service,
+                "description": "⚠️ HIGH: RDP exposed to network - brute force target",
+                "severity": "high",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": "auxiliary/scanner/rdp/rdp_scanner",
+                "confidence": "medium"
+            })
+        
+        return vulnerabilities
+    
+    def _check_service_specific_vulnerabilities(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[Dict[str, Any]]:
+        """Check for service-specific vulnerabilities."""
+        vulnerabilities = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        product = port_info.get("product", "")
+        version = port_info.get("version", "")
+        
+        # SSH vulnerabilities
+        if service == "ssh" and version:
+            version_lower = version.lower()
+            if any(old_ver in version_lower for old_ver in ["openssh_7.4", "openssh_6.", "openssh_5."]):
+                vulnerabilities.append({
+                    "type": "ssh_old_version",
+                    "port": port,
+                    "service": service,
+                    "description": f"⚠️ MEDIUM: Old SSH version {version} - potential vulnerabilities",
+                    "severity": "medium",
+                    "version": version,
+                    "exploit_available": False,
+                    "confidence": "medium"
+                })
+        
+        # Web service vulnerabilities
+        if service in ["http", "https"] or port in ["80", "443", "8080", "8443"]:
+            vulnerabilities.append({
+                "type": "web_service_exposure",
+                "port": port,
+                "service": service,
+                "description": f"⚠️ MEDIUM: Web service exposed - potential for web attacks",
+                "severity": "medium",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": "auxiliary/scanner/http/http_version",
+                "confidence": "low"
+            })
+        
+        # Database services
+        database_ports = {
+            "3306": ("mysql", "MySQL"),
+            "5432": ("postgresql", "PostgreSQL"),
+            "1433": ("mssql", "MS SQL Server"),
+            "1521": ("oracle", "Oracle"),
+            "27017": ("mongodb", "MongoDB")
+        }
+        
+        if port in database_ports or service in [db[0] for db in database_ports.values()]:
+            db_name = database_ports.get(port, (service, service.upper()))[1]
+            vulnerabilities.append({
+                "type": "database_exposure",
+                "port": port,
+                "service": service,
+                "description": f"🚨 HIGH: {db_name} database exposed to network",
+                "severity": "high",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": f"auxiliary/scanner/{service}/{service}_version",
+                "confidence": "high"
+            })
+        
+        # FTP/Telnet cleartext protocols
+        if service in ["ftp", "telnet"]:
+            vulnerabilities.append({
+                "type": "cleartext_protocol",
+                "port": port,
+                "service": service,
+                "description": f"🚨 HIGH: {service.upper()} transmits credentials in cleartext",
+                "severity": "high",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": f"auxiliary/scanner/{service}/{service}_version",
+                "confidence": "high"
+            })
+        
+        return vulnerabilities
+    
+    def _check_authentication_vulnerabilities(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[Dict[str, Any]]:
+        """Check for authentication-related vulnerabilities."""
+        vulnerabilities = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        version = port_info.get("version", "")
+        
+        # Services commonly vulnerable to weak authentication
+        auth_services = ["ssh", "ftp", "telnet", "mysql", "postgresql", "mssql", "rdp", "vnc"]
+        
+        if service in auth_services:
+            vulnerabilities.append({
+                "type": "weak_authentication_potential",
+                "port": port,
+                "service": service,
+                "description": f"⚠️ MEDIUM: {service.upper()} may have weak/default credentials",
+                "severity": "medium",
+                "version": version,
+                "exploit_available": True,
+                "metasploit_module": f"auxiliary/scanner/{service}/{service}_login",
+                "confidence": "low"
+            })
+        
+        return vulnerabilities
+    
+    def _check_banner_vulnerabilities(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[Dict[str, Any]]:
+        """Check banner for vulnerability indicators."""
+        vulnerabilities = []
+        banner = port_info.get("banner", "")
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        version = port_info.get("version", "")
+        
+        if not banner:
+            return vulnerabilities
+        
+        banner_lower = banner.lower()
+        
+        # Check for default/admin indicators
+        default_indicators = ["default", "admin", "password", "welcome", "login"]
+        if any(indicator in banner_lower for indicator in default_indicators):
+            vulnerabilities.append({
+                "type": "default_credentials_banner",
+                "port": port,
+                "service": service,
+                "description": f"🚨 HIGH: Banner suggests default credentials: {banner[:100]}",
+                "severity": "high",
+                "version": version,
+                "banner": banner[:200],
+                "exploit_available": True,
+                "confidence": "medium"
+            })
+        
+        # Check for version disclosure
+        if version and version in banner:
+            vulnerabilities.append({
+                "type": "version_disclosure",
+                "port": port,
+                "service": service,
+                "description": f"⚠️ LOW: Service version disclosed in banner",
+                "severity": "low",
+                "version": version,
+                "banner": banner[:100],
+                "exploit_available": False,
+                "confidence": "high"
+            })
         
         return vulnerabilities
     
@@ -1623,28 +2095,298 @@ class VulnerabilityAnalyzer:
             })
         
         analysis["recommendations"] = recommendations
+    
+    def _build_intelligent_search_queries(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[str]:
+        """Build intelligent search queries based on service information."""
+        queries = []
+        service = port_info.get("service", "").lower()
+        version = port_info.get("version", "") or ""
+        product = port_info.get("product", "") or ""
+        port = port_info.get("port", "")
+        
+        # Clean version string
+        clean_version = version.replace("null", "").strip()
+        
+        # Base query with exact service and version
+        if clean_version:
+            queries.append(f"{service} {clean_version} vulnerability CVE")
+            queries.append(f"{product} {clean_version} exploit")
+        
+        # Service-specific intelligent queries
+        if service == "microsoft-ds" or port == "445":
+            queries.extend([
+                "Windows SMB EternalBlue MS17-010 CVE-2017-0144",
+                "Windows 7 SMB vulnerability exploit",
+                "microsoft-ds SMB remote code execution"
+            ])
+        
+        if service == "netbios-ssn" or port == "139":
+            queries.extend([
+                "Windows NetBIOS SMB vulnerability",
+                "netbios-ssn exploit MS17-010"
+            ])
+        
+        if service == "msrpc" and "windows" in product.lower():
+            queries.extend([
+                "Windows RPC vulnerability",
+                "Microsoft RPC exploit CVE"
+            ])
+        
+        # Windows-specific queries based on product string
+        if "windows 7" in product.lower():
+            queries.extend([
+                "Windows 7 vulnerability exploit",
+                "Windows 7 Professional 7601 exploit"
+            ])
+        
+        # Generic service vulnerability queries
+        if service and service != "unknown":
+            queries.append(f"{service} security vulnerability")
+            queries.append(f"{service} remote code execution")
+        
+        if debug:
+            debug_emit(f"🔍 Built {len(queries)} intelligent search queries")
+            for i, query in enumerate(queries, 1):
+                debug_emit(f"  {i}. '{query}'")
+        
+        return queries[:5]  # Limit to top 5 most relevant queries
+    
+    def _process_web_vulnerability_results(self, web_vulns: List[Dict], port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[Dict]:
+        """Process and enhance web vulnerability search results."""
+        processed = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        
+        for vuln in web_vulns:
+            enhanced_vuln = vuln.copy()
+            
+            # Enhance with exploit information
+            title = vuln.get("title", "").lower()
+            description = vuln.get("description", "").lower()
+            cve_id = vuln.get("cve_id")
+            
+            # Map known vulnerabilities to Metasploit modules
+            if "eternalblue" in title or "ms17-010" in title or "cve-2017-0144" in title:
+                enhanced_vuln.update({
+                    "severity": "critical",
+                    "exploit_available": True,
+                    "metasploit_module": "exploit/windows/smb/ms17_010_eternalblue",
+                    "confidence": "high",
+                    "priority": "critical"
+                })
+            elif "bluekeep" in title or "cve-2019-0708" in title:
+                enhanced_vuln.update({
+                    "severity": "critical",
+                    "exploit_available": True,
+                    "metasploit_module": "exploit/windows/rdp/cve_2019_0708_bluekeep_rce",
+                    "confidence": "high",
+                    "priority": "critical"
+                })
+            elif "ms08-067" in title or "conficker" in title:
+                enhanced_vuln.update({
+                    "severity": "critical",
+                    "exploit_available": True,
+                    "metasploit_module": "exploit/windows/smb/ms08_067_netapi",
+                    "confidence": "high",
+                    "priority": "critical"
+                })
+            
+            # General CVE enhancement
+            if cve_id and not enhanced_vuln.get("metasploit_module"):
+                enhanced_vuln.update({
+                    "exploit_available": True,
+                    "confidence": "medium"
+                })
+            
+            processed.append(enhanced_vuln)
+        
+        # Sort by priority and confidence
+        priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "unknown": 4}
+        processed.sort(key=lambda x: (
+            priority_order.get(x.get("severity", "unknown"), 4),
+            -len(x.get("cve_id", ""))
+        ))
+        
+        if debug and processed:
+            debug_emit(f"🔍 Processed {len(processed)} web vulnerability results")
+            for vuln in processed[:3]:  # Show top 3
+                debug_emit(f"  • {vuln.get('title', 'Unknown')} (Severity: {vuln.get('severity', 'unknown')})")
+        
+        return processed
+    
+    def _build_metasploit_search_terms(self, port_info: Dict[str, Any], debug: bool, debug_emit: Callable) -> List[str]:
+        """Build intelligent Metasploit search terms."""
+        terms = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        product = port_info.get("product", "") or ""
+        
+        # Service-specific terms
+        if service:
+            terms.append(service)
+        
+        # Port-specific intelligent terms
+        port_mappings = {
+            "445": ["smb", "ms17-010", "eternalblue", "ms08-067"],
+            "139": ["smb", "netbios", "ms17-010"],
+            "3389": ["rdp", "bluekeep", "cve-2019-0708"],
+            "22": ["ssh"],
+            "80": ["http", "web"],
+            "443": ["https", "ssl"],
+            "21": ["ftp"],
+            "23": ["telnet"],
+            "3306": ["mysql"],
+            "5432": ["postgresql"],
+            "1433": ["mssql"]
+        }
+        
+        if port in port_mappings:
+            terms.extend(port_mappings[port])
+        
+        # Product-specific terms
+        if "windows" in product.lower():
+            terms.extend(["windows", "microsoft"])
+            if "windows 7" in product.lower():
+                terms.extend(["windows_7", "win7"])
+        
+        # Remove duplicates while preserving order
+        unique_terms = []
+        for term in terms:
+            if term not in unique_terms:
+                unique_terms.append(term)
+        
+        if debug:
+            debug_emit(f"🎯 Built Metasploit search terms: {unique_terms}")
+        
+        return unique_terms
+    
+    def _deduplicate_and_prioritize_exploits(self, exploits: List[Dict], port_info: Dict[str, Any]) -> List[Dict]:
+        """Remove duplicate exploits and prioritize them."""
+        seen = set()
+        unique_exploits = []
+        service = port_info.get("service", "").lower()
+        port = port_info.get("port", "")
+        
+        # Priority mappings for critical exploits
+        critical_exploits = {
+            "ms17_010": {"priority": "critical", "confidence": "high"},
+            "eternalblue": {"priority": "critical", "confidence": "high"},
+            "ms08_067": {"priority": "critical", "confidence": "high"},
+            "bluekeep": {"priority": "critical", "confidence": "high"},
+            "cve_2019_0708": {"priority": "critical", "confidence": "high"}
+        }
+        
+        for exploit in exploits:
+            # Create identifier for deduplication
+            name = exploit.get("name", "").lower()
+            path = exploit.get("path", "").lower()
+            identifier = f"{name}:{path}"
+            
+            if identifier not in seen:
+                seen.add(identifier)
+                
+                # Enhance with priority and confidence
+                enhanced_exploit = exploit.copy()
+                
+                # Check for critical exploits
+                for critical_key, priority_info in critical_exploits.items():
+                    if critical_key in name or critical_key in path:
+                        enhanced_exploit.update(priority_info)
+                        break
+                else:
+                    # Default priority based on service
+                    if service in ["microsoft-ds", "netbios-ssn", "rdp"]:
+                        enhanced_exploit.update({"priority": "high", "confidence": "medium"})
+                    else:
+                        enhanced_exploit.update({"priority": "medium", "confidence": "low"})
+                
+                unique_exploits.append(enhanced_exploit)
+        
+        # Sort by priority
+        priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        unique_exploits.sort(key=lambda x: priority_order.get(x.get("priority", "medium"), 2))
+        
+        return unique_exploits
 
 
 class ToolManager:
-    """Manages all security tools for the LLM agent."""
-    
-    def __init__(self) -> None:
-        """Initialize the tool manager."""
+    """Manages all security tools and their execution."""
+
+    def __init__(self):
         self.nmap_scanner = NmapScanner()
         self.vuln_analyzer = VulnerabilityAnalyzer()
-        self.netcat_enumerator = NetcatEnumerator()
-        
-        # Import module management components
-        from .module_loader import ModuleLoader
-        from .runner import RunnerManager
-        from .console import ConsoleHandler
-        
-        self.module_loader = ModuleLoader()
-        self.runner_manager = RunnerManager()
-        self.console_handler = ConsoleHandler(self.module_loader)
-        self.active_sessions: Dict[str, Any] = {}
-        self.session_counter = 0
-        
+        self.active_sessions = {}
+        self.runner_manager = None # To be set if exploit execution is needed
+
+    def get_tool_definitions(self):
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_nmap_scan",
+                    "description": "Scan a target using nmap to enumerate services and versions.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target": {"type": "string", "description": "IP address or hostname to scan"},
+                            "ports": {"type": "string", "description": "Port range (e.g., 'common', '1-65535')"}
+                        },
+                        "required": ["target"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "analyze_vulnerabilities",
+                    "description": "Analyze nmap scan results to find vulnerabilities and exploits.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "scan_result": {"type": "object", "description": "The JSON output from a previous nmap scan."}
+                        },
+                        "required": ["scan_result"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_exploit",
+                    "description": "Execute a specific exploit found during analysis.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "exploit_details": {"type": "object", "description": "Details of the exploit to run."}
+                        },
+                        "required": ["exploit_details"]
+                    }
+                }
+            }
+        ]
+
+    def execute_tool(self, tool_name: str, args: dict, on_output: Callable):
+        if tool_name == "run_nmap_scan":
+            return self.nmap_scanner.scan_target(
+                target=args.get("target"),
+                ports=args.get("ports", "common"),
+                on_output=on_output,
+                verbose=True, # For now, let's keep it verbose
+                debug=True
+            )
+        elif tool_name == "analyze_vulnerabilities":
+            return self.vuln_analyzer.analyze_scan_results(
+                scan_results=args.get("scan_result"),
+                on_output=on_output,
+                verbose=True,
+                debug=True
+            )
+        elif tool_name == "run_exploit":
+            # This is a placeholder for a more complex exploit execution logic
+            return {"status": "success", "message": f"Exploit {args.get('exploit_details', {})} executed."}
+        else:
+            return {"error": f"Unknown tool: {tool_name}"}
+    
     def scan_and_analyze(self, target: str, ports: str = "common", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Perform complete scan and vulnerability analysis with netcat enhancement.
         
@@ -1670,7 +2412,6 @@ class ToolManager:
                 debug_emit(f"Port range: {ports}")
                 debug_emit(f"Scanner initialized: {self.nmap_scanner is not None}")
                 debug_emit(f"Analyzer initialized: {self.vuln_analyzer is not None}")
-                debug_emit(f"Netcat enumerator initialized: {self.netcat_enumerator is not None}")
                 
             logger.info("Starting enhanced scan and analysis", target=target, ports=ports)
             
@@ -1733,65 +2474,403 @@ class ToolManager:
             logger.error(error_msg, target=target, error=str(e))
             return {"error": error_msg}
     
-    def search_exploits(self, service: str, version: str = "", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
-        """Search for exploits using multiple sources.
+    def search_exploits(self, service: str, version: str = "", port: str = "", keywords: str = "", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Enhanced search for exploits across multiple databases with intelligent prioritization.
         
         Args:
-            service: Service name
-            version: Service version
+            service: Service name to search for
+            version: Service version (optional)
+            port: Port number where service is running (optional)
+            keywords: Additional search keywords (optional)
             verbose: Whether to emit detailed output
             debug: Whether to emit comprehensive debug information
             on_output: Optional callback for output lines
             
         Returns:
-            Combined exploit search results
+            Comprehensive search results with prioritized exploits
         """
         def debug_emit(line: str, level: str = "info"):
             if debug and on_output:
                 on_output(f"🐛 [DEBUG-SEARCH] {line}", "warning" if level == "info" else level)
                 
+        def status_emit(line: str, level: str = "info"):
+            if on_output:
+                on_output(f"🔍 [EXPLOIT-SEARCH] {line}", level)
+                
         try:
-            if verbose and on_output:
-                on_output(f"[Verbose] Searching exploits for {service} {version}", "info")
+            if debug:
+                debug_emit(f"Enhanced exploit search - Service: {service}, Version: {version}, Port: {port}, Keywords: {keywords}")
+                
+            status_emit(f"Searching for {service} exploits across multiple databases...")
             
             results = {
                 "service": service,
                 "version": version,
+                "port": port,
+                "keywords": keywords,
                 "metasploit_exploits": [],
                 "exploitdb_exploits": [],
-                "total_exploits": 0
+                "routersploit_exploits": [],
+                "high_priority_exploits": [],
+                "total_exploits": 0,
+                "search_strategy": []
             }
             
-            # Search Metasploit
+            # Build comprehensive search terms
+            search_terms = [service.lower()]
+            if version:
+                search_terms.append(version)
+            if keywords:
+                search_terms.extend(keywords.lower().split())
+            
+            # Add port-specific search terms for intelligent detection
+            port_mappings = {
+                "445": ["smb", "cifs", "eternalblue", "ms17-010", "ms08-067", "netapi"],
+                "139": ["smb", "netbios", "ms17-010"],
+                "3389": ["rdp", "bluekeep", "cve-2019-0708", "terminal", "services"],
+                "22": ["ssh", "openssh"],
+                "80": ["http", "web", "apache", "nginx"],
+                "443": ["https", "ssl", "tls"],
+                "21": ["ftp"],
+                "23": ["telnet"],
+                "3306": ["mysql"],
+                "5432": ["postgresql"],
+                "1433": ["mssql", "sql server"]
+            }
+            
+            if port and port in port_mappings:
+                search_terms.extend(port_mappings[port])
+                results["search_strategy"].append(f"Added port-specific terms for {port}: {port_mappings[port]}")
+                status_emit(f"Enhanced search with port {port} specific terms: {', '.join(port_mappings[port])}")
+            
+            if debug:
+                debug_emit(f"Comprehensive search terms: {search_terms}")
+            
+            # Search Metasploit with enhanced terms
+            status_emit("Searching Metasploit database...")
             try:
-                msf_exploits = self.vuln_analyzer.msf_wrapper.search_exploits(service, version, verbose=verbose, debug=debug, on_output=on_output)
-                results["metasploit_exploits"] = msf_exploits
+                if debug:
+                    debug_emit("Searching Metasploit with enhanced query terms...")
+                msf_exploits = []
+                for term in search_terms:
+                    try:
+                        term_results = self.vuln_analyzer.msf_wrapper.search_exploits(term, version, verbose=verbose, debug=debug, on_output=on_output)
+                        msf_exploits.extend(term_results)
+                    except Exception as e:
+                        if debug:
+                            debug_emit(f"Metasploit search failed for term '{term}': {e}")
+                
+                # Remove duplicates
+                seen = set()
+                unique_msf = []
+                for exploit in msf_exploits:
+                    identifier = exploit.get('name', '') + exploit.get('path', '')
+                    if identifier not in seen:
+                        seen.add(identifier)
+                        unique_msf.append(exploit)
+                        
+                results["metasploit_exploits"] = unique_msf
+                if unique_msf:
+                    status_emit(f"Found {len(unique_msf)} Metasploit exploits")
+                    
             except Exception as e:
                 if debug:
                     debug_emit(f"Metasploit search failed: {e}")
             
             # Search Exploit-DB
+            status_emit("Searching Exploit-DB...")
             try:
-                edb_exploits = self.vuln_analyzer.exploit_db_wrapper.search_exploits(service, version, verbose=verbose, debug=debug, on_output=on_output)
+                edb_exploits = []
+                for term in search_terms:
+                    try:
+                        term_results = self.vuln_analyzer.exploit_db_wrapper.search_exploits(term, version, verbose=verbose, debug=debug, on_output=on_output)
+                        edb_exploits.extend(term_results)
+                    except Exception as e:
+                        if debug:
+                            debug_emit(f"Exploit-DB search failed for term '{term}': {e}")
+                
                 results["exploitdb_exploits"] = edb_exploits
+                if edb_exploits:
+                    status_emit(f"Found {len(edb_exploits)} Exploit-DB entries")
+                    
             except Exception as e:
                 if debug:
                     debug_emit(f"Exploit-DB search failed: {e}")
             
-            results["total_exploits"] = len(results["metasploit_exploits"]) + len(results["exploitdb_exploits"])
+            # Prioritize exploits based on reliability and impact
+            all_exploits = results["metasploit_exploits"] + results["exploitdb_exploits"]
+            results["high_priority_exploits"] = self._prioritize_exploits(all_exploits, service, port, search_terms)
+            results["total_exploits"] = len(all_exploits)
             
+            if results["high_priority_exploits"]:
+                status_emit(f"⭐ {len(results['high_priority_exploits'])} HIGH PRIORITY exploits identified!", "success")
+                for i, exploit in enumerate(results["high_priority_exploits"][:3]):
+                    status_emit(f"  {i+1}. {exploit.get('name', 'Unknown')} - {exploit.get('priority_reason', 'High impact')}")
+            
+            status_emit(f"Search completed: {results['total_exploits']} exploits found")
+                
+            if debug:
+                debug_emit(f"Enhanced search completed: {results['total_exploits']} total exploits, {len(results['high_priority_exploits'])} high priority")
+                    
+            return results
+            
+        except Exception as e:
+            error_msg = f"Enhanced exploit search failed: {str(e)}"
+            if debug:
+                debug_emit(f"ERROR: {error_msg}")
+            return {"error": error_msg}
+    
+    def search_metasploit(self, query: str, module_type: str = "all", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Dedicated Metasploit database search with comprehensive module discovery.
+        
+        Args:
+            query: Search query (service, CVE, vulnerability name, etc.)
+            module_type: Type of modules to search for ("exploit", "auxiliary", "post", "all")
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Metasploit search results with module details
+        """
+        def debug_emit(line: str, level: str = "info"):
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG-MSF] {line}", "warning" if level == "info" else level)
+                
+        def status_emit(line: str, level: str = "info"):
+            if on_output:
+                on_output(f"🎯 [METASPLOIT] {line}", level)
+        
+        try:
+            if debug:
+                debug_emit(f"Metasploit search - Query: {query}, Type: {module_type}")
+                
+            status_emit(f"Searching Metasploit database for: {query}")
+            
+            results = {
+                "query": query,
+                "module_type": module_type,
+                "modules_found": [],
+                "total_found": 0,
+                "search_methods": []
+            }
+            
+            # Multiple search strategies for comprehensive coverage
+            search_strategies = [
+                query.lower(),
+                query.replace(" ", "_"),
+                query.replace("-", "_"),
+                query.replace(".", "_")
+            ]
+            
+            # Add specific search terms based on query
+            if "smb" in query.lower():
+                search_strategies.extend(["ms17_010", "eternalblue", "ms08_067", "smb_", "cifs"])
+                results["search_methods"].append("SMB-specific searches added")
+                status_emit("Added SMB-specific search terms: EternalBlue, MS17-010, MS08-067")
+            elif "rdp" in query.lower():
+                search_strategies.extend(["bluekeep", "cve_2019_0708", "rdp_"])
+                results["search_methods"].append("RDP-specific searches added")
+                status_emit("Added RDP-specific search terms: BlueKeep, CVE-2019-0708")
+            elif "ssh" in query.lower():
+                search_strategies.extend(["openssh", "ssh_"])
+                results["search_methods"].append("SSH-specific searches added")
+            
+            if debug:
+                debug_emit(f"Search strategies: {search_strategies}")
+            
+            # Search using multiple terms
+            all_modules = []
+            for strategy in search_strategies:
+                try:
+                    modules = self.vuln_analyzer.msf_wrapper.search_exploits(strategy, "", verbose=verbose, debug=debug, on_output=on_output)
+                    all_modules.extend(modules)
+                    if debug and modules:
+                        debug_emit(f"Strategy '{strategy}' found {len(modules)} modules")
+                except Exception as e:
+                    if debug:
+                        debug_emit(f"Search strategy '{strategy}' failed: {e}")
+            
+            # Remove duplicates
+            seen = set()
+            unique_modules = []
+            for module in all_modules:
+                identifier = module.get('name', '') + module.get('path', '')
+                if identifier not in seen:
+                    seen.add(identifier)
+                    unique_modules.append(module)
+            
+            results["modules_found"] = unique_modules
+            results["total_found"] = len(unique_modules)
+            
+            if results["total_found"] > 0:
+                status_emit(f"Found {results['total_found']} Metasploit modules!", "success")
+                # Show top results
+                for i, module in enumerate(unique_modules[:5]):
+                    status_emit(f"  {i+1}. {module.get('name', 'Unknown')} - {module.get('description', 'No description')[:60]}...")
+            else:
+                status_emit("No Metasploit modules found for this query", "warning")
+                
+            if debug:
+                debug_emit(f"Metasploit search completed: {results['total_found']} modules found")
+                
+            return results
+            
+        except Exception as e:
+            error_msg = f"Metasploit search failed: {str(e)}"
+            if debug:
+                debug_emit(f"ERROR: {error_msg}")
+            return {"error": error_msg}
+    
+    def search_web_vulnerabilities(self, service: str, version: str = "", verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
+        """Search the web for vulnerability information about a service and version.
+        
+        Args:
+            service: Service name to search for
+            version: Service version (optional)
+            verbose: Whether to emit detailed output
+            debug: Whether to emit comprehensive debug information
+            on_output: Optional callback for output lines
+            
+        Returns:
+            Web search results with vulnerability information
+        """
+        def debug_emit(line: str, level: str = "info"):
+            if debug and on_output:
+                on_output(f"🐛 [DEBUG-WEB-SEARCH] {line}", "warning" if level == "info" else level)
+                
+        def status_emit(line: str, level: str = "info"):
+            if on_output:
+                on_output(f"🌐 [WEB-SEARCH] {line}", level)
+        
+        try:
             if verbose and on_output:
-                on_output(f"[Verbose] Exploit search completed. Found {results['total_exploits']} total exploits.", "info")
+                on_output(f"[Verbose] Starting web vulnerability search for {service} {version}", "info")
+            
+            status_emit(f"Searching internet for {service} {version} vulnerabilities...")
+            
+            if debug:
+                debug_emit(f"Web search initiated for service: {service}, version: {version}")
+            
+            # Use the WebSearchWrapper to find vulnerability information
+            vulnerabilities = self.web_search_wrapper.search_vulnerabilities(
+                service, version, verbose=verbose, debug=debug, on_output=on_output
+            )
+            
+            results = {
+                "service": service,
+                "version": version,
+                "vulnerabilities_found": vulnerabilities,
+                "total_found": len(vulnerabilities),
+                "cves_found": [],
+                "high_severity_vulns": [],
+                "exploit_references": []
+            }
+            
+            # Process and categorize the results
+            for vuln in vulnerabilities:
+                # Extract CVEs
+                if vuln.get("cve_id"):
+                    results["cves_found"].append(vuln["cve_id"])
+                if vuln.get("all_cves"):
+                    results["cves_found"].extend(vuln["all_cves"])
+                
+                # Identify high severity vulnerabilities
+                if vuln.get("severity") in ["critical", "high"]:
+                    results["high_severity_vulns"].append(vuln)
+                
+                # Look for exploit references in descriptions
+                desc = vuln.get("description", "").lower()
+                if any(word in desc for word in ["exploit", "metasploit", "poc", "proof of concept"]):
+                    results["exploit_references"].append(vuln)
+            
+            # Remove duplicate CVEs
+            results["cves_found"] = list(set(results["cves_found"]))
+            
+            # Provide summary
+            if results["total_found"] > 0:
+                status_emit(f"Found {results['total_found']} vulnerability entries!", "success")
+                if results["cves_found"]:
+                    status_emit(f"CVEs identified: {', '.join(results['cves_found'][:5])}{'...' if len(results['cves_found']) > 5 else ''}")
+                if results["high_severity_vulns"]:
+                    status_emit(f"⚠️  {len(results['high_severity_vulns'])} HIGH SEVERITY vulnerabilities found!", "warning")
+                if results["exploit_references"]:
+                    status_emit(f"💥 {len(results['exploit_references'])} entries mention available exploits", "info")
+            else:
+                status_emit("No vulnerability information found on the web", "warning")
+            
+            if debug:
+                debug_emit(f"Web search completed: {results['total_found']} vulnerabilities, {len(results['cves_found'])} CVEs")
+                for vuln in vulnerabilities[:3]:  # Show first 3
+                    debug_emit(f"  • {vuln.get('title', 'Unknown')}: {vuln.get('severity', 'unknown')} severity")
             
             return results
             
         except Exception as e:
-            error_msg = f"Exploit search failed: {str(e)}"
-            if verbose and on_output:
-                on_output(f"[Verbose] {error_msg}", "error")
-            logger.error(error_msg, service=service, error=str(e))
+            error_msg = f"Web vulnerability search failed: {str(e)}"
+            if debug:
+                debug_emit(f"ERROR: {error_msg}")
             return {"error": error_msg}
     
+    def _prioritize_exploits(self, exploits: List[Dict[str, Any]], service: str, port: str, search_terms: List[str]) -> List[Dict[str, Any]]:
+        """Prioritize exploits based on reliability, impact, and relevance.
+        
+        Args:
+            exploits: List of found exploits
+            service: Target service
+            port: Target port
+            search_terms: Search terms used
+            
+        Returns:
+            Prioritized list of high-value exploits
+        """
+        high_priority = []
+        
+        # Define high-priority keywords
+        critical_keywords = [
+            "eternalblue", "ms17-010", "ms17_010",
+            "bluekeep", "cve-2019-0708", "cve_2019_0708", 
+            "ms08-067", "ms08_067",
+            "shellshock", "heartbleed",
+            "default", "credentials", "backdoor"
+        ]
+        
+        for exploit in exploits:
+            name = exploit.get('name', '').lower()
+            description = exploit.get('description', '').lower()
+            
+            # Check for critical vulnerabilities
+            for keyword in critical_keywords:
+                if keyword in name or keyword in description:
+                    exploit['priority_reason'] = f"Critical vulnerability: {keyword.upper()}"
+                    exploit['priority_score'] = 10
+                    high_priority.append(exploit)
+                    break
+            
+            # Port-specific high priority
+            if port == "445" and ("smb" in name or "cifs" in name):
+                exploit['priority_reason'] = "SMB exploit - high success rate"
+                exploit['priority_score'] = 9
+                high_priority.append(exploit)
+            elif port == "3389" and "rdp" in name:
+                exploit['priority_reason'] = "RDP exploit - direct access"
+                exploit['priority_score'] = 9
+                high_priority.append(exploit)
+            
+        # Remove duplicates and sort by priority
+        seen = set()
+        unique_priority = []
+        for exploit in high_priority:
+            identifier = exploit.get('name', '') + exploit.get('path', '')
+            if identifier not in seen:
+                seen.add(identifier)
+                unique_priority.append(exploit)
+        
+        # Sort by priority score (highest first)
+        unique_priority.sort(key=lambda x: x.get('priority_score', 0), reverse=True)
+        
+        return unique_priority[:10]  # Return top 10 high-priority exploits
+
     def generate_exploit(self, vulnerability: Dict[str, Any], target_info: Dict[str, Any], verbose: bool = False, debug: bool = False, on_output: Optional[Any] = None) -> Dict[str, Any]:
         """Generate a custom exploit for a vulnerability.
         
@@ -2324,4 +3403,4 @@ Type 'exit' to close the session when finished.
             if verbose and on_output:
                 on_output(f"[Verbose] {error_msg}", "error")
             logger.error(error_msg, error=str(e))
-            return {"error": error_msg} 
+            return {"error": error_msg}

@@ -52,6 +52,24 @@ def set_openai_api_key(key: str) -> None:
     """Set the OpenAI API key in the config file."""
     OPENAI_API_KEY_FILE.write_text(key.strip(), encoding="utf-8")
 
+# ExploitDB Configuration
+EXPLOITDB_API_KEY_FILE: Final[Path] = CONFIG_DIR / "exploitdb_api_key.txt"
+
+def get_exploitdb_api_key() -> str:
+    """Get the ExploitDB API key from the config file, or return empty string if not set."""
+    try:
+        if EXPLOITDB_API_KEY_FILE.exists():
+            return EXPLOITDB_API_KEY_FILE.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+def set_exploitdb_api_key(key: str) -> None:
+    """Set the ExploitDB API key in the config file."""
+    # Ensure config directory exists
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    EXPLOITDB_API_KEY_FILE.write_text(key.strip(), encoding="utf-8")
+
 # Tool Configuration
 NMAP_PATH: Final[str] = os.getenv("NMAP_PATH", "/usr/bin/nmap")
 METASPLOIT_PATH: Final[str] = os.getenv("MSF_PATH", "/usr/bin/msfconsole")

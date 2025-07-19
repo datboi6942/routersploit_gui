@@ -366,6 +366,50 @@ class RouterSploitWebGUI:
             except Exception as e:
                 logger.error("Failed to save API key", error=str(e))
                 return jsonify({'error': f'Failed to save API key: {str(e)}'}), 500
+        
+        @self.app.route('/api/auto-own/set-exploitdb-key', methods=['POST'])
+        def set_exploitdb_api_key() -> Any:
+            """Set the ExploitDB API key for enhanced exploit searching."""
+            data = request.get_json()
+            if not data or 'api_key' not in data:
+                logger.warning("No ExploitDB API key provided in request")
+                return jsonify({'error': 'No API key provided'}), 400
+            
+            api_key = data['api_key'].strip()
+            
+            try:
+                # Save the ExploitDB API key to file (even if empty to clear it)
+                config.set_exploitdb_api_key(api_key)
+                
+                if api_key:
+                    # Log success (without exposing the key)
+                    key_preview = f"{api_key[:6]}...{api_key[-4:]}" if len(api_key) > 10 else "***"
+                    logger.info("ExploitDB API key saved successfully", key_preview=key_preview)
+                    message = "ExploitDB API key saved successfully"
+                else:
+                    logger.info("ExploitDB API key cleared")
+                    message = "ExploitDB API key cleared - ExploitDB will be skipped"
+                
+                # Verify it was saved correctly by reading it back
+                saved_key = config.get_exploitdb_api_key()
+                if saved_key == api_key:
+                    logger.info("ExploitDB API key verification successful")
+                    
+                    # Force the auto-own manager to refresh its agent
+                    try:
+                        self.auto_own_manager.refresh_agent()
+                        logger.info("Auto-own agent refreshed with new ExploitDB API key")
+                    except Exception as refresh_error:
+                        logger.warning("Failed to refresh auto-own agent", error=str(refresh_error))
+                    
+                    return jsonify({'status': 'success', 'message': message})
+                else:
+                    logger.error("ExploitDB API key verification failed - saved key doesn't match")
+                    return jsonify({'error': 'ExploitDB API key verification failed'}), 500
+                    
+            except Exception as e:
+                logger.error("Failed to save ExploitDB API key", error=str(e))
+                return jsonify({'error': f'Failed to save ExploitDB API key: {str(e)}'}), 500
     
     def _setup_socket_handlers(self) -> None:
         """Setup SocketIO event handlers."""
