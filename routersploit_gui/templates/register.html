@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - RouterSploit GUI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20250115-ghostfix" rel="stylesheet">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#0a0a0a">
+</head>
+<body>
+    <div class="matrix-rain" id="matrixRain"></div>
+    <div class="container d-flex justify-content-center align-items-center vh-100">
+        <div class="card glass-dark" style="width: 400px;">
+            <div class="card-body">
+                <h2 class="card-title text-center text-neon mb-4">
+                    <i class="fas fa-user-plus"></i> Create Account
+                </h2>
+                
+                <form method="POST" action="">
+                    {{ form.hidden_tag() }}
+                    <fieldset class="form-group">
+                        <div class="form-group mb-3">
+                            {{ form.username.label(class="form-label text-neon-secondary") }}
+                            {% if form.username.errors %}
+                                {{ form.username(class="form-control is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.username.errors %}
+                                        <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ form.username(class="form-control", placeholder="Choose a username") }}
+                            {% endif %}
+                        </div>
+                        <div class="form-group mb-3">
+                            {{ form.password.label(class="form-label text-neon-secondary") }}
+                            {% if form.password.errors %}
+                                {{ form.password(class="form-control is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.password.errors %}
+                                        <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ form.password(class="form-control", placeholder="Enter a secure password") }}
+                            {% endif %}
+                        </div>
+                        <div class="form-group mb-4">
+                            {{ form.confirm_password.label(class="form-label text-neon-secondary") }}
+                            {% if form.confirm_password.errors %}
+                                {{ form.confirm_password(class="form-control is-invalid") }}
+                                <div class="invalid-feedback">
+                                    {% for error in form.confirm_password.errors %}
+                                        <span>{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                {{ form.confirm_password(class="form-control", placeholder="Confirm your password") }}
+                            {% endif %}
+                        </div>
+                    </fieldset>
+                    <div class="d-grid mb-3">
+                        {{ form.submit(class="btn btn-primary holographic") }}
+                    </div>
+                </form>
+                <div class="text-center">
+                    <small class="text-muted">
+                        Already have an account? <a href="{{ url_for('login') }}" class="text-neon-secondary">Log In</a>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Matrix Rain Effect (same as login)
+        const matrixRain = document.getElementById('matrixRain');
+        if (matrixRain) {
+            const context = matrixRain.getContext('2d');
+            matrixRain.width = window.innerWidth;
+            matrixRain.height = window.innerHeight;
+            const alphabet = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッンABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            const fontSize = 16;
+            const columns = matrixRain.width / fontSize;
+            const rainDrops = [];
+            for (let x = 0; x < columns; x++) {
+                rainDrops[x] = 1;
+            }
+            const draw = () => {
+                context.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                context.fillRect(0, 0, matrixRain.width, matrixRain.height);
+                context.fillStyle = '#0F0';
+                context.font = fontSize + 'px monospace';
+                for (let i = 0; i < rainDrops.length; i++) {
+                    const text = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+                    context.fillText(text, i * fontSize, rainDrops[i] * fontSize);
+                    if (rainDrops[i] * fontSize > matrixRain.height && Math.random() > 0.975) {
+                        rainDrops[i] = 0;
+                    }
+                    rainDrops[i]++;
+                }
+            };
+            setInterval(draw, 30);
+        }
+    </script>
+</body>
+</html> 

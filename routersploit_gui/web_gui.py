@@ -5,8 +5,14 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
 from flask_socketio import SocketIO, emit
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, SubmitField
+from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 import structlog
 
 from . import config
@@ -16,6 +22,40 @@ from .console import ConsoleHandler
 from .auto_own_runner import AutoOwnManager
 
 logger = structlog.get_logger(__name__)
+
+
+# Initialize database
+db = SQLAlchemy()
+
+# User model for Flask-Login
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128))
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+# Login form using Flask-WTF
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Log In')
+
+# Registration form
+class RegistrationForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=25)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), EqualTo('password')])
+    submit = SubmitField('Register')
+
+    def validate_username(self, username):
+        user = User.query.filter_by(username=username.data).first()
+        if user:
+            raise ValidationError('That username is taken. Please choose a different one.')
 
 
 class RouterSploitWebGUI:
@@ -41,7 +81,20 @@ class RouterSploitWebGUI:
                         template_folder='templates',
                         static_folder='static')
         self.app.config['SECRET_KEY'] = 'routersploit-gui-secret-key'
+        self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+        self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         
+        # Initialize extensions
+        db.init_app(self.app)
+
+        # Create database tables if they don't exist
+        with self.app.app_context():
+            db.create_all()
+
+        self.login_manager = LoginManager()
+        self.login_manager.init_app(self.app)
+        self.login_manager.login_view = 'login'
+
         # Initialize SocketIO for real-time communication
         self.socketio = SocketIO(self.app, cors_allowed_origins="*")
         
@@ -60,7 +113,8 @@ class RouterSploitWebGUI:
         # Console clients tracking
         self.console_clients: Dict[str, bool] = {}  # session_id -> is_active
         
-        # Setup routes and socket handlers
+        # Setup auth, routes, and socket handlers
+        self._setup_auth()
         self._setup_routes()
         self._setup_socket_handlers()
         
@@ -70,10 +124,53 @@ class RouterSploitWebGUI:
         # Load modules
         self._load_modules()
         
+    def _setup_auth(self) -> None:
+        """Set up user authentication."""
+        @self.login_manager.user_loader
+        def load_user(user_id: str) -> Optional[User]:
+            return User.query.get(int(user_id))
+
     def _setup_routes(self) -> None:
         """Setup Flask routes."""
+
+        @self.app.route('/login', methods=['GET', 'POST'])
+        def login():
+            """Handles user login."""
+            form = LoginForm()
+            if form.validate_on_submit():
+                user = User.query.filter_by(username=form.username.data).first()
+                if user and user.check_password(form.password.data):
+                    login_user(user, remember=True)
+                    flash('Logged in successfully.', 'success')
+                    next_page = request.args.get('next')
+                    return redirect(next_page or url_for('index'))
+                else:
+                    flash('Login unsuccessful. Please check username and password.', 'danger')
+            return render_template('login.html', form=form, title='Login')
+
+        @self.app.route('/register', methods=['GET', 'POST'])
+        def register():
+            """Handles user registration."""
+            form = RegistrationForm()
+            if form.validate_on_submit():
+                user = User(username=form.username.data)
+                user.set_password(form.password.data)
+                db.session.add(user)
+                db.session.commit()
+                flash(f'Account created for {form.username.data}! You are now able to log in.', 'success')
+                return redirect(url_for('login'))
+            return render_template('register.html', form=form, title='Register')
+
+        @self.app.route('/logout')
+        @login_required
+        def logout():
+            """Handles user logout."""
+            logout_user()
+            flash('You have been logged out.')
+            return redirect(url_for('login'))
         
         @self.app.route('/')
+        @login_required
         def index() -> str:
             """Main page."""
             return render_template('index.html')
@@ -95,6 +192,7 @@ class RouterSploitWebGUI:
             return send_from_directory(static_dir, 'sw.js', mimetype='application/javascript')
         
         @self.app.route('/api/modules')
+        @login_required
         def get_modules() -> Any:
             """Get all modules as a tree structure."""
             # Convert the tree to a JSON-serializable format
@@ -105,6 +203,7 @@ class RouterSploitWebGUI:
             })
         
         @self.app.route('/api/module/<path:module_path>')
+        @login_required
         def get_module(module_path: str) -> Any:
             """Get details for a specific module."""
             module = self._find_module_by_path(module_path)
@@ -132,6 +231,7 @@ class RouterSploitWebGUI:
             })
         
         @self.app.route('/api/run', methods=['POST'])
+        @login_required
         def run_module() -> Any:
             """Execute a module with provided options."""
             data = request.get_json()
@@ -191,12 +291,14 @@ class RouterSploitWebGUI:
                 return jsonify({'error': 'Failed to start module'}), 500
         
         @self.app.route('/api/stop', methods=['POST'])
+        @login_required
         def stop_module() -> Any:
             """Stop the currently running module."""
             self.runner_manager.stop_current()
             return jsonify({'status': 'stopped'})
         
         @self.app.route('/api/status')
+        @login_required
         def get_status() -> Any:
             """Get current execution status."""
             return jsonify({
@@ -205,6 +307,7 @@ class RouterSploitWebGUI:
             })
         
         @self.app.route('/api/auto-own/start', methods=['POST'])
+        @login_required
         def start_auto_own() -> Any:
             """Start an auto-own process."""
             data = request.get_json()
@@ -240,17 +343,20 @@ class RouterSploitWebGUI:
                 return jsonify({'error': 'Failed to start auto-own process'}), 500
         
         @self.app.route('/api/auto-own/stop', methods=['POST'])
+        @login_required
         def stop_auto_own() -> Any:
             """Stop the current auto-own process."""
             self.auto_own_manager.stop_current()
             return jsonify({'status': 'stopped'})
         
         @self.app.route('/api/auto-own/status')
+        @login_required
         def get_auto_own_status() -> Any:
             """Get auto-own status and configuration."""
             return jsonify(self.auto_own_manager.get_status())
         
         @self.app.route('/api/sessions')
+        @login_required
         def get_sessions() -> Any:
             """Get all active RCE sessions."""
             # Get sessions from the auto-own manager's tool manager
@@ -265,6 +371,7 @@ class RouterSploitWebGUI:
             })
         
         @self.app.route('/api/auto-own/check-api-key')
+        @login_required
         def check_api_key_status() -> Any:
             """Check if OpenAI API key is configured (for debugging)."""
             api_key = config.get_openai_api_key()
@@ -279,6 +386,7 @@ class RouterSploitWebGUI:
             })
         
         @self.app.route('/api/sessions/<session_id>/execute', methods=['POST'])
+        @login_required
         def execute_session_command(session_id: str) -> Any:
             """Execute a command in an RCE session."""
             data = request.get_json()
@@ -314,18 +422,21 @@ class RouterSploitWebGUI:
             return jsonify({'error': 'Auto-own manager not available'}), 503
         
         @self.app.route('/api/auto-own/targets')
+        @login_required
         def get_auto_own_targets() -> Any:
             """Get list of targets with auto-own history."""
             targets = self.auto_own_manager.agent.get_available_targets()
             return jsonify({'targets': targets})
         
         @self.app.route('/api/auto-own/history/<target>')
+        @login_required
         def get_auto_own_history(target: str) -> Any:
             """Get auto-own history for a specific target."""
             history = self.auto_own_manager.get_target_history(target)
             return jsonify({'history': history})
         
         @self.app.route('/api/auto-own/set-api-key', methods=['POST'])
+        @login_required
         def set_auto_own_api_key() -> Any:
             """Set the OpenAI API key for Auto-Own."""
             data = request.get_json()
@@ -368,6 +479,7 @@ class RouterSploitWebGUI:
                 return jsonify({'error': f'Failed to save API key: {str(e)}'}), 500
         
         @self.app.route('/api/auto-own/set-exploitdb-key', methods=['POST'])
+        @login_required
         def set_exploitdb_api_key() -> Any:
             """Set the ExploitDB API key for enhanced exploit searching."""
             data = request.get_json()
@@ -415,13 +527,18 @@ class RouterSploitWebGUI:
         """Setup SocketIO event handlers."""
         
         @self.socketio.on('connect')
-        def handle_connect() -> None:
-            """Handle client connection."""
-            logger.info("Client connected")
+        def handle_connect() -> bool:
+            """Handle client connection, ensuring user is authenticated."""
+            if not current_user.is_authenticated:
+                logger.warning("Unauthenticated Socket.IO connection rejected.")
+                return False  # Reject connection
+            
+            logger.info("Client connected", user=current_user.username)
             emit('status', {
                 'running': self.runner_manager.is_running(),
                 'current_module': self.current_module.dotted_path if self.current_module else None
             })
+            return True
         
         @self.socketio.on('disconnect')
         def handle_disconnect() -> None:
@@ -429,7 +546,7 @@ class RouterSploitWebGUI:
             logger.info("Client disconnected")
             
         @self.socketio.on('console_connect')
-        def handle_console_connect() -> None:
+        def handle_console_connect(data=None) -> None:
             """Handle console connection."""
             session_id = request.sid
             self.console_clients[session_id] = True
@@ -440,7 +557,7 @@ class RouterSploitWebGUI:
             })
             
         @self.socketio.on('console_disconnect')
-        def handle_console_disconnect() -> None:
+        def handle_console_disconnect(data=None) -> None:
             """Handle console disconnection."""
             session_id = request.sid
             if session_id in self.console_clients:
