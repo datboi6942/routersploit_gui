@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#0a0a0a">
 </head>
 <body>
-    <div class="matrix-rain" id="matrixRain"></div>
+    <canvas class="matrix-rain" id="matrixRain"></canvas>
     <div class="container d-flex justify-content-center align-items-center vh-100">
         <div class="card glass-dark" style="width: 400px;">
             <div class="card-body">
@@ -87,34 +87,50 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Matrix Rain Effect (same as login)
+        // Matrix Rain Effect
         const matrixRain = document.getElementById('matrixRain');
         if (matrixRain) {
-            const context = matrixRain.getContext('2d');
-            matrixRain.width = window.innerWidth;
-            matrixRain.height = window.innerHeight;
-            const alphabet = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッンABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-            const fontSize = 16;
-            const columns = matrixRain.width / fontSize;
-            const rainDrops = [];
-            for (let x = 0; x < columns; x++) {
-                rainDrops[x] = 1;
-            }
-            const draw = () => {
-                context.fillStyle = 'rgba(0, 0, 0, 0.05)';
-                context.fillRect(0, 0, matrixRain.width, matrixRain.height);
-                context.fillStyle = '#0F0';
-                context.font = fontSize + 'px monospace';
-                for (let i = 0; i < rainDrops.length; i++) {
-                    const text = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
-                    context.fillText(text, i * fontSize, rainDrops[i] * fontSize);
-                    if (rainDrops[i] * fontSize > matrixRain.height && Math.random() > 0.975) {
-                        rainDrops[i] = 0;
-                    }
-                    rainDrops[i]++;
+            try {
+                const context = matrixRain.getContext('2d');
+                matrixRain.width = window.innerWidth;
+                matrixRain.height = window.innerHeight;
+                const alphabet = 'アァカサタナハマヤャラワガザダバパイィキシチニヒミリヰギジヂビピウゥクスツヌフムユュルグズブヅプエェケセテネヘメレヱゲゼデベペオォコソトノホモヨョロヲゴゾドボポヴッンABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+                const fontSize = 16;
+                const columns = matrixRain.width / fontSize;
+                const rainDrops = [];
+                
+                for (let x = 0; x < columns; x++) {
+                    rainDrops[x] = 1;
                 }
-            };
-            setInterval(draw, 30);
+                
+                const draw = () => {
+                    context.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                    context.fillRect(0, 0, matrixRain.width, matrixRain.height);
+                    context.fillStyle = '#0F0';
+                    context.font = fontSize + 'px monospace';
+                    
+                    for (let i = 0; i < rainDrops.length; i++) {
+                        const text = alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+                        context.fillText(text, i * fontSize, rainDrops[i] * fontSize);
+                        
+                        if (rainDrops[i] * fontSize > matrixRain.height && Math.random() > 0.975) {
+                            rainDrops[i] = 0;
+                        }
+                        rainDrops[i]++;
+                    }
+                };
+                
+                setInterval(draw, 30);
+                
+                // Handle window resize
+                window.addEventListener('resize', () => {
+                    matrixRain.width = window.innerWidth;
+                    matrixRain.height = window.innerHeight;
+                });
+                
+            } catch (error) {
+                console.warn('Matrix rain animation failed:', error);
+            }
         }
     </script>
 </body>
