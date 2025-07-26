@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup 2FA - RouterSploit GUI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20250115-ghostfix" rel="stylesheet">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#0a0a0a">
+    <style>
+        .matrix-rain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="matrix-rain" id="matrixRain"></canvas>
+    <div class="container d-flex justify-content-center align-items-center vh-100">
+        <div class="card glass-dark" style="width: 500px;">
+            <div class="card-body">
+                <h2 class="card-title text-center text-neon mb-4">
+                    <i class="fas fa-shield-alt"></i> Setup Two-Factor Authentication
+                </h2>
+                
+                <div class="alert alert-info holographic mb-4" role="alert">
+                    <i class="fas fa-info-circle"></i>
+                    Welcome <strong>{{ username }}</strong>! For security, you must set up two-factor authentication to continue.
+                </div>
+
+                <div class="mb-4">
+                    <h5 class="text-neon-secondary mb-3">
+                        <i class="fas fa-key"></i> Step 1: Insert your U2F Security Key
+                    </h5>
+                    <p class="text-muted">
+                        Please insert your U2F security key into a USB port or ensure your NFC-enabled device is ready.
+                    </p>
+                </div>
+
+                <div class="mb-4">
+                    <label for="keyName" class="form-label text-neon-secondary">
+                        <i class="fas fa-tag"></i> Security Key Name (Optional):
+                    </label>
+                    <input type="text" id="keyName" class="form-control" placeholder="e.g., YubiKey 5, Titan Key" maxlength="100">
+                    <small class="form-text text-muted">Give your security key a name to identify it later.</small>
+                </div>
+
+                <div id="status" class="alert d-none mb-3" role="alert"></div>
+
+                <div class="d-grid">
+                    <button id="registerBtn" class="btn btn-primary holographic">
+                        <i class="fas fa-plus-circle"></i> Register Security Key
+                    </button>
+                </div>
+
+                <div class="text-center mt-4">
+                    <small class="text-muted">
+                        <i class="fas fa-question-circle"></i>
+                        Don't have a U2F security key? You'll need one to access RouterSploit.
+                        <br>Recommended: YubiKey, Google Titan, or any FIDO2/WebAuthn compatible device.
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        console.log('=== JAVASCRIPT STARTED ===');
+        
+        // Immediate test when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== DOM LOADED ===');
+            
+            const testBtn = document.getElementById('registerBtn');
+            console.log('Button found on DOM ready:', testBtn);
+            
+            if (testBtn) {
+                // Add a simple click handler for testing
+                testBtn.onclick = function() {
+                    console.log('=== BUTTON CLICKED VIA ONCLICK ===');
+                    alert('Button works! Starting WebAuthn...');
+                    performWebAuthnRegistration();
+                };
+                console.log('Onclick handler attached');
+            } else {
+                console.error('Button NOT found on DOM ready');
+            }
+        });
+        
+        console.log('Setup 2FA JavaScript loaded');
+        
+        // Define the main registration function first
+        async function performWebAuthnRegistration() {
+            console.log('=== STARTING WEBAUTHN REGISTRATION ===');
+            const statusDiv = document.getElementById('status');
+            const registerBtn = document.getElementById('registerBtn');
+            const keyName = document.getElementById('keyName').value.trim() || 'Security Key';
+
+            console.log('WebAuthn registration started', { keyName });
+
+            try {
+                registerBtn.disabled = true;
+                registerBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Waiting for security key...';
+                
+                statusDiv.className = 'alert alert-info';
+                statusDiv.classList.remove('d-none');
+                statusDiv.innerHTML = '<i class="fas fa-info-circle"></i> Please touch your security key when it blinks...';
+
+                console.log('Fetching registration options...');
+                // Begin registration
+                const beginResponse = await fetch('/api/webauthn/register/begin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                console.log('Begin response status:', beginResponse.status);
+                if (!beginResponse.ok) {
+                    const errorText = await beginResponse.text();
+                    console.error('Begin registration failed:', errorText);
+                    throw new Error('Failed to begin registration: ' + errorText);
+                }
+
+                const registrationOptions = await beginResponse.json();
+                console.log('Registration options received:', registrationOptions);
+
+                // Convert base64url to ArrayBuffer for WebAuthn API
+                console.log('Converting challenge and user ID...');
+                registrationOptions.publicKey.challenge = base64urlToArrayBuffer(registrationOptions.publicKey.challenge);
+                registrationOptions.publicKey.user.id = base64urlToArrayBuffer(registrationOptions.publicKey.user.id);
+                
+                if (registrationOptions.publicKey.excludeCredentials) {
+                    console.log('Converting exclude credentials...');
+                    registrationOptions.publicKey.excludeCredentials = registrationOptions.publicKey.excludeCredentials.map(cred => ({
+                        ...cred,
+                        id: base64urlToArrayBuffer(cred.id)
+                    }));
+                }
+
+                console.log('Calling navigator.credentials.create with options:', registrationOptions);
+                console.log('RP ID:', registrationOptions.publicKey.rp.id);
+                console.log('Origin:', window.location.origin);
+                console.log('Full registration options structure:', JSON.stringify(registrationOptions, null, 2));
+                
+                // Create credential
+                const credential = await navigator.credentials.create(registrationOptions);
+                console.log('Credential created successfully:', credential);
+
+                // Convert ArrayBuffer to base64url for transmission
+                const credentialForServer = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64url(credential.rawId),
+                    response: {
+                        attestationObject: arrayBufferToBase64url(credential.response.attestationObject),
+                        clientDataJSON: arrayBufferToBase64url(credential.response.clientDataJSON)
+                    },
+                    type: credential.type
+                };
+                console.log('Credential prepared for server:', credentialForServer);
+
+                // Complete registration
+                console.log('Sending completion request...');
+                const completeResponse = await fetch('/api/webauthn/register/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        credential: credentialForServer,
+                        name: keyName
+                    })
+                });
+
+                console.log('Complete response status:', completeResponse.status);
+                const result = await completeResponse.json();
+                console.log('Complete response result:', result);
+
+                if (result.verified) {
+                    console.log('Registration successful!');
+                    statusDiv.className = 'alert alert-success';
+                    statusDiv.classList.remove('d-none');
+                    statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + result.message;
+                    
+                    setTimeout(() => {
+                        window.location.href = result.redirect || '/';
+                    }, 1500);
+                } else {
+                    throw new Error(result.error || 'Registration failed');
+                }
+
+            } catch (error) {
+                console.error('Registration error:', error);
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.classList.remove('d-none');
+                statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + error.message;
+                
+                registerBtn.disabled = false;
+                registerBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Register Security Key';
+            }
+        }
+        
+        // Utility functions for base64url conversion
+        function base64urlToArrayBuffer(base64url) {
+            const padding = '='.repeat((4 - base64url.length % 4) % 4);
+            const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray.buffer;
+        }
+
+        function arrayBufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let str = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                str += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+    </script>
+</body>
+</html> 

@@ -4,8 +4,10 @@ import json
 import threading
 import time
 from typing import Any, Dict, List, Optional
+import secrets
+import base64
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_socketio import SocketIO, emit
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_wtf import FlaskForm
@@ -13,6 +15,16 @@ from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Length, EqualTo, ValidationError
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from webauthn import generate_registration_options, verify_registration_response, generate_authentication_options, verify_authentication_response
+from webauthn.helpers.structs import (
+    AttestationConveyancePreference, 
+    AuthenticatorSelectionCriteria, 
+    ResidentKeyRequirement, 
+    UserVerificationRequirement,
+    PublicKeyCredentialDescriptor,
+    AuthenticatorTransport
+)
+from webauthn.helpers.cose import COSEAlgorithmIdentifier
 import structlog
 
 from . import config
@@ -31,13 +43,43 @@ db = SQLAlchemy()
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128))
+    # Increased length to avoid truncating long hashes (e.g., scrypt) which breaks login verification
+    password_hash = db.Column(db.String(512))
+    two_factor_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Relationship to U2F credentials
+    u2f_credentials = db.relationship('U2FCredential', backref='user', lazy=True, cascade='all, delete-orphan')
 
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
+    def __init__(self, username, **kwargs):
+        super().__init__(**kwargs)
+        self.username = username
+        self.two_factor_enabled = False  # Explicitly set to False
+
+    def set_password(self, password: str) -> None:
+        """Hash and store the user's password.
+
+        Args:
+            password: Plain-text password provided by the user.
+        """
+        # Explicitly use PBKDF2-SHA256 to ensure hashes stay <512 chars and
+        # remain compatible with the defined column size regardless of
+        # Werkzeug default algorithm changes.
+        self.password_hash = generate_password_hash(password, method="pbkdf2:sha256")
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def has_u2f_credentials(self):
+        return len(self.u2f_credentials) > 0
+
+class U2FCredential(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    credential_id = db.Column(db.Text, nullable=False)
+    public_key = db.Column(db.Text, nullable=False)
+    sign_count = db.Column(db.Integer, default=0)
+    name = db.Column(db.String(100), nullable=False)  # User-friendly name for the key
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
 # Login form using Flask-WTF
 class LoginForm(FlaskForm):
@@ -83,6 +125,11 @@ class RouterSploitWebGUI:
         self.app.config['SECRET_KEY'] = 'routersploit-gui-secret-key'
         self.app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
         self.app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+        
+        # Configure WTF-CSRF settings
+        self.app.config['WTF_CSRF_TIME_LIMIT'] = None  # Disable CSRF timeout
+        self.app.config['WTF_CSRF_ENABLED'] = True
+        self.app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour session lifetime
         
         # Initialize extensions
         db.init_app(self.app)
@@ -138,14 +185,48 @@ class RouterSploitWebGUI:
             """Handles user login."""
             form = LoginForm()
             if form.validate_on_submit():
+                logger.info("Login form validated successfully", username=form.username.data)
                 user = User.query.filter_by(username=form.username.data).first()
-                if user and user.check_password(form.password.data):
-                    login_user(user, remember=True)
-                    flash('Logged in successfully.', 'success')
-                    next_page = request.args.get('next')
-                    return redirect(next_page or url_for('index'))
+                
+                if user:
+                    logger.info("User found in database", username=user.username, user_id=user.id, two_factor_enabled=user.two_factor_enabled)
+                    logger.info("Checking password for user", username=user.username)
+                    password_check_result = user.check_password(form.password.data)
+                    logger.info("Password check result", username=user.username, password_correct=password_check_result)
                 else:
+                    logger.warning("User not found in database", attempted_username=form.username.data)
+                
+                if user and user.check_password(form.password.data):
+                    logger.info("Authentication successful", username=user.username)
+                    # Check if user has 2FA enabled and configured
+                    if user.two_factor_enabled and user.has_u2f_credentials():
+                        logger.info("User has 2FA enabled, redirecting to verify_2fa", username=user.username)
+                        # User has 2FA enabled, require U2F authentication
+                        session['pending_user_id'] = user.id
+                        return redirect(url_for('verify_2fa'))
+                    else:
+                        logger.info("User does not have 2FA fully configured", username=user.username, two_factor_enabled=user.two_factor_enabled, has_credentials=user.has_u2f_credentials())
+                        # Login user first, then check 2FA setup
+                        login_user(user, remember=True)
+                        logger.info("User logged in successfully", username=user.username)
+                        
+                        # Check if user needs to set up 2FA
+                        if not user.two_factor_enabled:
+                            logger.info("Redirecting to 2FA setup", username=user.username)
+                            flash('Welcome! Please set up two-factor authentication to continue.', 'info')
+                            return redirect(url_for('setup_2fa'))
+                        else:
+                            logger.info("User fully authenticated, redirecting to main app", username=user.username)
+                            flash('Logged in successfully.', 'success')
+                            next_page = request.args.get('next')
+                            return redirect(next_page or url_for('index'))
+                else:
+                    logger.warning("Authentication failed", attempted_username=form.username.data, user_exists=user is not None)
                     flash('Login unsuccessful. Please check username and password.', 'danger')
+            else:
+                if request.method == 'POST':
+                    logger.warning("Form validation failed", errors=form.errors)
+                    
             return render_template('login.html', form=form, title='Login')
 
         @self.app.route('/register', methods=['GET', 'POST'])
@@ -161,6 +242,291 @@ class RouterSploitWebGUI:
                 return redirect(url_for('login'))
             return render_template('register.html', form=form, title='Register')
 
+        @self.app.route('/setup-2fa')
+        @login_required
+        def setup_2fa():
+            """Display 2FA setup page."""
+            # User must be logged in to access this page
+            if current_user.two_factor_enabled:
+                flash('Two-factor authentication is already set up.', 'info')
+                return redirect(url_for('index'))
+            
+            return render_template('setup_2fa.html', username=current_user.username)
+
+        @self.app.route('/verify-2fa')
+        def verify_2fa():
+            """Display 2FA verification page."""
+            if 'pending_user_id' not in session:
+                flash('Invalid session. Please log in again.', 'danger')
+                return redirect(url_for('login'))
+            
+            user = User.query.get(session['pending_user_id'])
+            if not user or not user.has_u2f_credentials():
+                flash('Invalid session. Please log in again.', 'danger')
+                return redirect(url_for('login'))
+            
+            return render_template('verify_2fa.html', username=user.username)
+
+        @self.app.route('/api/webauthn/register/begin', methods=['POST'])
+        @login_required
+        def webauthn_register_begin():
+            """Begin WebAuthn registration process."""
+            logger.info("WebAuthn registration begin requested", user_id=current_user.id, username=current_user.username)
+            
+            if current_user.two_factor_enabled:
+                logger.warning("User already has 2FA enabled", user_id=current_user.id)
+                return jsonify({'error': 'Two-factor authentication is already set up'}), 400
+
+            try:
+                # Generate challenge
+                user_id = base64.urlsafe_b64encode(str(current_user.id).encode()).decode().rstrip('=')
+                logger.info("Generated user ID for WebAuthn", user_id=user_id, original_id=current_user.id)
+                
+                registration_options = generate_registration_options(
+                    rp_id="localhost",  # Use localhost specifically for development
+                    rp_name="RouterSploit GUI",
+                    user_id=user_id.encode(),
+                    user_name=current_user.username,
+                    user_display_name=current_user.username,
+                    attestation=AttestationConveyancePreference.NONE,
+                    authenticator_selection=AuthenticatorSelectionCriteria(
+                        user_verification=UserVerificationRequirement.DISCOURAGED,
+                        resident_key=ResidentKeyRequirement.DISCOURAGED
+                    ),
+                    supported_pub_key_algs=[
+                        COSEAlgorithmIdentifier.ECDSA_SHA_256,
+                        COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
+                    ],
+                    exclude_credentials=[
+                        PublicKeyCredentialDescriptor(
+                            id=base64.urlsafe_b64decode(cred.credential_id.encode() + b'=='),
+                            transports=[AuthenticatorTransport.USB, AuthenticatorTransport.NFC]
+                        ) for cred in current_user.u2f_credentials
+                    ]
+                )
+                logger.info("Generated WebAuthn registration options successfully")
+
+                # Store challenge in session
+                session['webauthn_challenge'] = base64.urlsafe_b64encode(registration_options.challenge).decode().rstrip('=')
+                logger.info("Stored challenge in session", challenge_length=len(session['webauthn_challenge']))
+                
+                response_data = {
+                    'publicKey': {
+                        'challenge': base64.urlsafe_b64encode(registration_options.challenge).decode().rstrip('='),
+                        'rp': {
+                            'name': registration_options.rp.name,
+                            'id': registration_options.rp.id,
+                        },
+                        'user': {
+                            'id': base64.urlsafe_b64encode(registration_options.user.id).decode().rstrip('='),
+                            'name': registration_options.user.name,
+                            'displayName': registration_options.user.display_name,
+                        },
+                        'pubKeyCredParams': [
+                            {'alg': alg.alg, 'type': 'public-key'} 
+                            for alg in registration_options.pub_key_cred_params
+                        ],
+                        'timeout': registration_options.timeout,
+                        'attestation': registration_options.attestation,
+                        'authenticatorSelection': {
+                            'userVerification': registration_options.authenticator_selection.user_verification,
+                            'residentKey': registration_options.authenticator_selection.resident_key,
+                        },
+                        'excludeCredentials': [
+                            {
+                                'id': base64.urlsafe_b64encode(cred.id).decode().rstrip('='),
+                                'type': 'public-key',
+                                'transports': [t.value for t in cred.transports] if cred.transports else []
+                            } for cred in registration_options.exclude_credentials
+                        ]
+                    }
+                }
+                logger.info("Returning WebAuthn registration options", rp_id=response_data['publicKey']['rp']['id'])
+                return jsonify(response_data)
+                
+            except Exception as e:
+                logger.error("Failed to generate WebAuthn registration options", error=str(e), user_id=current_user.id)
+                return jsonify({'error': f'Failed to generate registration options: {str(e)}'}), 500
+
+        @self.app.route('/api/webauthn/register/complete', methods=['POST'])
+        @login_required
+        def webauthn_register_complete():
+            """Complete WebAuthn registration process."""
+            logger.info("WebAuthn registration completion started", user_id=current_user.id, username=current_user.username)
+            
+            if 'webauthn_challenge' not in session:
+                logger.warning("Invalid session - missing webauthn_challenge", user_id=current_user.id)
+                return jsonify({'error': 'Invalid session. Please try again.'}), 401
+            
+            if current_user.two_factor_enabled:
+                logger.warning("User already has 2FA enabled", user_id=current_user.id)
+                return jsonify({'error': 'Two-factor authentication is already set up'}), 400
+
+            data = request.get_json()
+            logger.info("Received WebAuthn credential data", has_data=data is not None, has_credential=data and 'credential' in data if data else False)
+            
+            if not data or 'credential' not in data:
+                logger.warning("No credential data provided", data_keys=list(data.keys()) if data else None)
+                return jsonify({'error': 'No credential data provided'}), 400
+                
+            credential_name = data.get('name', 'Security Key')
+            logger.info("Processing WebAuthn credential", user_id=current_user.id, credential_name=credential_name, credential_keys=list(data['credential'].keys()) if data.get('credential') else None)
+            
+            try:
+                challenge = base64.urlsafe_b64decode(session['webauthn_challenge'].encode() + b'==')
+                logger.info("Challenge decoded successfully")
+                
+                verification = verify_registration_response(
+                    credential=data['credential'],
+                    expected_challenge=challenge,
+                    expected_origin="http://localhost:5000",  # Use localhost for development
+                    expected_rp_id="localhost",  # Use localhost for development
+                )
+                logger.info("WebAuthn verification object type", verification_type=type(verification).__name__)
+                logger.info("WebAuthn verification object attributes", attributes=[attr for attr in dir(verification) if not attr.startswith('_')])
+                logger.info("WebAuthn verification completed", verification_object=str(verification))
+
+                # If we reach here, verification was successful (no exception was raised)
+                logger.info("WebAuthn verification successful", user_id=current_user.id)
+                
+                # Save credential to database
+                credential_id = base64.urlsafe_b64encode(verification.credential_id).decode().rstrip('=')
+                public_key = base64.urlsafe_b64encode(verification.credential_public_key).decode().rstrip('=')
+                
+                logger.info("Saving U2F credential to database", user_id=current_user.id)
+                new_credential = U2FCredential(
+                    user_id=current_user.id,
+                    credential_id=credential_id,
+                    public_key=public_key,
+                    sign_count=verification.sign_count,
+                    name=credential_name
+                )
+                
+                try:
+                    db.session.add(new_credential)
+                    current_user.two_factor_enabled = True
+                    db.session.commit()
+                    logger.info("U2F credential saved successfully", user_id=current_user.id)
+                    
+                    # Clean up session
+                    session.pop('webauthn_challenge', None)
+                    
+                    # User is already logged in, just redirect to main app
+                    logger.info("2FA setup completed successfully", user_id=current_user.id)
+                    
+                    return jsonify({
+                        'verified': True, 
+                        'message': '2FA setup complete!',
+                        'redirect': url_for('index')
+                    })
+                except Exception as db_error:
+                    db.session.rollback()
+                    logger.error("Database error during credential save", error=str(db_error), user_id=current_user.id)
+                    return jsonify({'verified': False, 'error': 'Failed to save credential. Please try again.'}), 500
+                    
+            except Exception as e:
+                logger.error("WebAuthn registration error", error=str(e), user_id=current_user.id)
+                return jsonify({'verified': False, 'error': f'Registration failed: {str(e)}'}), 400
+
+        @self.app.route('/api/webauthn/authenticate/begin', methods=['POST'])
+        def webauthn_authenticate_begin():
+            """Begin WebAuthn authentication process."""
+            if 'pending_user_id' not in session:
+                return jsonify({'error': 'Invalid session'}), 401
+            
+            user = User.query.get(session['pending_user_id'])
+            if not user or not user.has_u2f_credentials():
+                return jsonify({'error': 'Invalid session'}), 401
+
+            # Generate authentication options
+            authentication_options = generate_authentication_options(
+                rp_id="localhost",  # Use localhost for development
+                allow_credentials=[
+                    PublicKeyCredentialDescriptor(
+                        id=base64.urlsafe_b64decode(cred.credential_id.encode() + b'=='),
+                        transports=[AuthenticatorTransport.USB, AuthenticatorTransport.NFC]
+                    ) for cred in user.u2f_credentials
+                ],
+                user_verification=UserVerificationRequirement.PREFERRED,
+            )
+
+            # Store challenge in session
+            session['webauthn_challenge'] = base64.urlsafe_b64encode(authentication_options.challenge).decode().rstrip('=')
+            
+            return jsonify({
+                'publicKey': {
+                    'challenge': base64.urlsafe_b64encode(authentication_options.challenge).decode().rstrip('='),
+                    'timeout': authentication_options.timeout,
+                    'rpId': authentication_options.rp_id,
+                    'allowCredentials': [
+                        {
+                            'id': base64.urlsafe_b64encode(cred.id).decode().rstrip('='),
+                            'type': 'public-key',
+                            'transports': [t.value for t in cred.transports] if cred.transports else []
+                        } for cred in authentication_options.allow_credentials
+                    ],
+                    'userVerification': authentication_options.user_verification,
+                }
+            })
+
+        @self.app.route('/api/webauthn/authenticate/complete', methods=['POST'])
+        def webauthn_authenticate_complete():
+            """Complete WebAuthn authentication process."""
+            if 'pending_user_id' not in session or 'webauthn_challenge' not in session:
+                return jsonify({'error': 'Invalid session'}), 401
+            
+            user = User.query.get(session['pending_user_id'])
+            if not user:
+                return jsonify({'error': 'Invalid session'}), 401
+
+            data = request.get_json()
+            
+            try:
+                # Find the credential used
+                credential_id = base64.urlsafe_b64encode(
+                    base64.urlsafe_b64decode(data['credential']['id'].encode() + b'==')
+                ).decode().rstrip('=')
+                
+                credential = U2FCredential.query.filter_by(
+                    user_id=user.id, 
+                    credential_id=credential_id
+                ).first()
+                
+                if not credential:
+                    return jsonify({'verified': False, 'error': 'Credential not found'}), 400
+
+                challenge = base64.urlsafe_b64decode(session['webauthn_challenge'].encode() + b'==')
+                public_key = base64.urlsafe_b64decode(credential.public_key.encode() + b'==')
+                
+                verification = verify_authentication_response(
+                    credential=data['credential'],
+                    expected_challenge=challenge,
+                    expected_origin="http://localhost:5000",  # Use localhost for development
+                    expected_rp_id="localhost",  # Use localhost for development
+                    credential_public_key=public_key,
+                    credential_current_sign_count=credential.sign_count,
+                )
+
+                # If we reach here, authentication was successful (no exception was raised)
+                logger.info("WebAuthn authentication successful", user_id=user.id)
+                
+                # Update sign count
+                credential.sign_count = verification.new_sign_count
+                db.session.commit()
+                
+                # Clean up session
+                session.pop('webauthn_challenge', None)
+                session.pop('pending_user_id', None)
+                
+                # Log the user in
+                login_user(user, remember=True)
+                
+                return jsonify({'verified': True, 'message': 'Authentication successful!'})
+                
+            except Exception as e:
+                logger.error("WebAuthn authentication error", error=str(e))
+                return jsonify({'verified': False, 'error': 'Authentication failed'}), 400
+
         @self.app.route('/logout')
         @login_required
         def logout():
@@ -173,6 +539,11 @@ class RouterSploitWebGUI:
         @login_required
         def index() -> str:
             """Main page."""
+            # Check if user needs to set up 2FA
+            if not current_user.two_factor_enabled:
+                flash('Please set up two-factor authentication to continue.', 'warning')
+                return redirect(url_for('setup_2fa'))
+            
             return render_template('index.html')
         
         @self.app.route('/console-test')

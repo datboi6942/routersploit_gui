@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify 2FA - RouterSploit GUI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}?v=20250115-ghostfix" rel="stylesheet">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#0a0a0a">
+    <style>
+        .matrix-rain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="matrix-rain" id="matrixRain"></canvas>
+    <div class="container d-flex justify-content-center align-items-center vh-100">
+        <div class="card glass-dark" style="width: 450px;">
+            <div class="card-body">
+                <h2 class="card-title text-center text-neon mb-4">
+                    <i class="fas fa-shield-alt"></i> Two-Factor Authentication
+                </h2>
+                
+                <div class="alert alert-info holographic mb-4" role="alert">
+                    <i class="fas fa-info-circle"></i>
+                    Welcome back <strong>{{ username }}</strong>! Please verify your identity with your security key.
+                </div>
+
+                <div class="mb-4 text-center">
+                    <div class="text-neon mb-3" style="font-size: 4rem;">
+                        <i class="fas fa-key"></i>
+                    </div>
+                    <h5 class="text-neon-secondary mb-3">
+                        Insert your U2F Security Key
+                    </h5>
+                    <p class="text-muted">
+                        Insert your registered security key and touch it when prompted.
+                    </p>
+                </div>
+
+                <div id="status" class="alert d-none mb-3" role="alert"></div>
+
+                <div class="d-grid">
+                    <button id="authenticateBtn" class="btn btn-primary holographic">
+                        <i class="fas fa-fingerprint"></i> Authenticate with Security Key
+                    </button>
+                </div>
+
+                <div class="text-center mt-4">
+                    <small class="text-muted">
+                        <a href="{{ url_for('login') }}" class="text-neon-secondary">Back to Login</a>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        console.log('=== VERIFY 2FA JAVASCRIPT STARTED ===');
+        
+        // Immediate test when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== DOM LOADED ===');
+            
+            const testBtn = document.getElementById('authenticateBtn');
+            console.log('Authenticate button found on DOM ready:', testBtn);
+            
+            if (testBtn) {
+                // Add a simple click handler for testing
+                testBtn.onclick = function() {
+                    console.log('=== AUTHENTICATE BUTTON CLICKED ===');
+                    performWebAuthnAuthentication();
+                };
+                console.log('Onclick handler attached to authenticate button');
+                
+                // Auto-start authentication after a delay
+                setTimeout(() => {
+                    console.log('Auto-starting authentication...');
+                    testBtn.click();
+                }, 1000);
+            } else {
+                console.error('Authenticate button NOT found on DOM ready');
+            }
+        });
+        
+        console.log('Verify 2FA JavaScript loaded');
+        
+        // Define the main authentication function
+        async function performWebAuthnAuthentication() {
+            console.log('=== STARTING WEBAUTHN AUTHENTICATION ===');
+            const statusDiv = document.getElementById('status');
+            const authenticateBtn = document.getElementById('authenticateBtn');
+
+            console.log('WebAuthn authentication started');
+
+            try {
+                authenticateBtn.disabled = true;
+                authenticateBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Waiting for security key...';
+                
+                statusDiv.className = 'alert alert-info';
+                statusDiv.classList.remove('d-none');
+                statusDiv.innerHTML = '<i class="fas fa-info-circle"></i> Please touch your security key when it blinks...';
+
+                console.log('Fetching authentication options...');
+                // Begin authentication
+                const beginResponse = await fetch('/api/webauthn/authenticate/begin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                console.log('Begin response status:', beginResponse.status);
+                if (!beginResponse.ok) {
+                    const errorText = await beginResponse.text();
+                    console.error('Begin authentication failed:', errorText);
+                    throw new Error('Failed to begin authentication: ' + errorText);
+                }
+
+                const authenticationOptions = await beginResponse.json();
+                console.log('Authentication options received:', authenticationOptions);
+
+                // Convert base64url to ArrayBuffer for WebAuthn API
+                console.log('Converting challenge and credentials...');
+                authenticationOptions.publicKey.challenge = base64urlToArrayBuffer(authenticationOptions.publicKey.challenge);
+                
+                if (authenticationOptions.publicKey.allowCredentials) {
+                    authenticationOptions.publicKey.allowCredentials = authenticationOptions.publicKey.allowCredentials.map(cred => ({
+                        ...cred,
+                        id: base64urlToArrayBuffer(cred.id)
+                    }));
+                }
+
+                console.log('Calling navigator.credentials.get with options:', authenticationOptions);
+                // Get credential
+                const credential = await navigator.credentials.get(authenticationOptions);
+                console.log('Credential retrieved successfully:', credential);
+
+                // Convert ArrayBuffer to base64url for transmission
+                const credentialForServer = {
+                    id: credential.id,
+                    rawId: arrayBufferToBase64url(credential.rawId),
+                    response: {
+                        authenticatorData: arrayBufferToBase64url(credential.response.authenticatorData),
+                        clientDataJSON: arrayBufferToBase64url(credential.response.clientDataJSON),
+                        signature: arrayBufferToBase64url(credential.response.signature),
+                        userHandle: credential.response.userHandle ? arrayBufferToBase64url(credential.response.userHandle) : null
+                    },
+                    type: credential.type
+                };
+                console.log('Credential prepared for server:', credentialForServer);
+
+                // Complete authentication
+                console.log('Sending completion request...');
+                const completeResponse = await fetch('/api/webauthn/authenticate/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        credential: credentialForServer
+                    })
+                });
+
+                console.log('Complete response status:', completeResponse.status);
+                const result = await completeResponse.json();
+                console.log('Complete response result:', result);
+
+                if (result.verified) {
+                    console.log('Authentication successful!');
+                    statusDiv.className = 'alert alert-success';
+                    statusDiv.innerHTML = '<i class="fas fa-check-circle"></i> ' + result.message;
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    throw new Error(result.error || 'Authentication failed');
+                }
+
+            } catch (error) {
+                console.error('Authentication error:', error);
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.classList.remove('d-none');
+                statusDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> ' + error.message;
+                
+                authenticateBtn.disabled = false;
+                authenticateBtn.innerHTML = '<i class="fas fa-fingerprint"></i> Authenticate with Security Key';
+            }
+        }
+
+        // Utility functions for base64url conversion
+        function base64urlToArrayBuffer(base64url) {
+            const padding = '='.repeat((4 - base64url.length % 4) % 4);
+            const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray.buffer;
+        }
+
+        function arrayBufferToBase64url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let str = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                str += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+    </script>
+</body>
+</html> 
