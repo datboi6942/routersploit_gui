@@ -7,3 +7,7 @@
 .env.test.local
 .env.production.local
 *.pyc
+instance/
+users.db
+werkzeug.security 
+cookies.txt
