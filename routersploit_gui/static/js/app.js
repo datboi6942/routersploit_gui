@@ -227,6 +227,15 @@ class RouterSploitGUI {
             });
             console.log('✅ Auto-own tab handler added');
         }
+
+        const customScriptsTab = document.getElementById('custom-scripts-tab');
+        if (customScriptsTab) {
+            customScriptsTab.addEventListener('shown.bs.tab', () => {
+                console.log('📝 Custom scripts tab shown');
+                this.onCustomScriptsTabShown();
+            });
+            console.log('✅ Custom scripts tab handler added');
+        }
     }
 
     showCriticalError(message) {
@@ -279,6 +288,12 @@ class RouterSploitGUI {
         
         this.socket.on('output', (data) => {
             this.addOutput(data.line, data.level);
+            
+            // Also send to custom scripts output if a custom script is running
+            if (this.currentModule && this.currentModule.startsWith('custom_scripts.')) {
+                this.addScriptOutput(data.line, data.level);
+            }
+            
             if (this.effectsManager) {
                 this.effectsManager.addConsoleOutput(data.line, data.level);
             }
@@ -2255,6 +2270,260 @@ Type 'help' for available offline commands.`;
         startBtn.disabled = running;
         stopBtn.disabled = !running;
         targetInput.disabled = running;
+    }
+
+    // Custom Scripts Methods
+    onCustomScriptsTabShown() {
+        console.log('📝 Custom scripts tab shown, initializing...');
+        this.setupCustomScriptsHandlers();
+        this.loadCustomScripts();
+    }
+
+    setupCustomScriptsHandlers() {
+        console.log('🔧 Setting up custom scripts handlers...');
+        
+        // Upload button
+        const uploadBtn = document.getElementById('uploadScriptBtn');
+        const fileInput = document.getElementById('scriptUpload');
+        if (uploadBtn && fileInput) {
+            uploadBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => this.uploadCustomScript(e.target.files[0]));
+        }
+
+        // Refresh button
+        const refreshBtn = document.getElementById('refreshScriptsBtn');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => this.loadCustomScripts());
+        }
+    }
+
+    async loadCustomScripts() {
+        console.log('📋 Loading custom scripts...');
+        try {
+            const response = await fetch('/api/custom-scripts');
+            const data = await response.json();
+            
+            console.log('📋 Custom scripts loaded:', data);
+            this.updateCustomScriptsUI(data.scripts);
+            this.updateCustomScriptsCount(data.count);
+        } catch (error) {
+            console.error('❌ Failed to load custom scripts:', error);
+        }
+    }
+
+    updateCustomScriptsUI(scripts) {
+        const container = document.getElementById('customScriptsList');
+        if (!container) return;
+
+        if (!scripts || scripts.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted p-3">
+                    <i class="fas fa-file-code"></i><br>No scripts uploaded
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = scripts.map(script => `
+            <div class="list-group-item list-group-item-action custom-script-item" data-script="${script.name}">
+                <div class="d-flex w-100 justify-content-between">
+                    <h6 class="mb-1">${script.name}</h6>
+                    <small class="${script.valid ? 'text-success' : 'text-danger'}">${script.valid ? '✅' : '❌'}</small>
+                </div>
+                <p class="mb-1">${script.class_name}</p>
+                <small>Size: ${(script.size / 1024).toFixed(1)} KB</small>
+                <div class="mt-2">
+                    <button class="btn btn-primary btn-sm execute-script-btn" data-script="${script.name}" ${!script.valid ? 'disabled' : ''}>
+                        <i class="fas fa-play"></i> Execute
+                    </button>
+                    <button class="btn btn-danger btn-sm delete-script-btn" data-script="${script.name}">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        // Add event handlers
+        container.querySelectorAll('.execute-script-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const scriptName = e.target.closest('.execute-script-btn').dataset.script;
+                this.selectCustomScript(scriptName);
+            });
+        });
+
+        container.querySelectorAll('.delete-script-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const scriptName = e.target.closest('.delete-script-btn').dataset.script;
+                this.deleteCustomScript(scriptName);
+            });
+        });
+    }
+
+    updateCustomScriptsCount(count) {
+        const badge = document.getElementById('customScriptsCount');
+        if (badge) {
+            badge.textContent = count;
+        }
+    }
+
+    async uploadCustomScript(file) {
+        if (!file) return;
+
+        console.log('📤 Uploading custom script:', file.name);
+        
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const response = await fetch('/api/custom-scripts/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                console.log('✅ Script uploaded successfully:', result);
+                this.loadCustomScripts(); // Refresh the list
+            } else {
+                console.error('❌ Upload failed:', result);
+                alert(`Upload failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('❌ Upload error:', error);
+            alert('Upload failed. Please try again.');
+        }
+    }
+
+    async deleteCustomScript(scriptName) {
+        if (!confirm(`Are you sure you want to delete ${scriptName}?`)) {
+            return;
+        }
+
+        console.log('🗑️ Deleting custom script:', scriptName);
+
+        try {
+            const response = await fetch(`/api/custom-scripts/${scriptName}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                console.log('✅ Script deleted successfully:', result);
+                this.loadCustomScripts(); // Refresh the list
+            } else {
+                console.error('❌ Delete failed:', result);
+                alert(`Delete failed: ${result.error}`);
+            }
+        } catch (error) {
+            console.error('❌ Delete error:', error);
+            alert('Delete failed. Please try again.');
+        }
+    }
+
+    selectCustomScript(scriptName) {
+        console.log('📝 Selecting custom script:', scriptName);
+        
+        // Show script execution interface
+        const executionContent = document.getElementById('scriptExecutionContent');
+        const scriptNameHeader = document.getElementById('selectedScriptName');
+        
+        if (scriptNameHeader) {
+            scriptNameHeader.innerHTML = `<i class="fas fa-play text-neon"></i> ${scriptName}`;
+        }
+
+        if (executionContent) {
+            executionContent.innerHTML = `
+                <div class="mb-3">
+                    <h6>Script Options</h6>
+                    <div id="scriptOptionsForm">
+                        <div class="mb-2">
+                            <label class="form-label">Target IP</label>
+                            <input type="text" class="form-control" id="script-target" value="192.168.1.1">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Port</label>
+                            <input type="number" class="form-control" id="script-port" value="80">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">Timeout</label>
+                            <input type="number" class="form-control" id="script-timeout" value="10">
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <button class="btn btn-primary" onclick="window.routerSploitGUI.executeCustomScript('${scriptName}')">
+                        <i class="fas fa-play"></i> Run Script
+                    </button>
+                </div>
+                <div class="mb-3">
+                    <h6>Output</h6>
+                    <div id="scriptOutput" class="bg-dark border rounded p-3" style="height: 300px; overflow-y: auto; font-family: monospace;">
+                        <div class="text-muted">Ready to execute script...</div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    async executeCustomScript(scriptName) {
+        console.log('▶️ Executing custom script:', scriptName);
+        
+        const target = document.getElementById('script-target')?.value || '';
+        const port = document.getElementById('script-port')?.value || '80';
+        const timeout = document.getElementById('script-timeout')?.value || '10';
+
+        const options = {
+            target: target,
+            port: parseInt(port),
+            timeout: parseInt(timeout)
+        };
+
+        try {
+            // For now, use the regular module execution API with custom script path
+            const modulePath = `custom_scripts.${scriptName.replace('.py', '')}`;
+            
+            const response = await fetch('/api/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    module_path: modulePath,
+                    options: options
+                })
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                console.log('✅ Script execution started:', result);
+                this.currentModule = modulePath; // Track the current module for output routing
+                this.addScriptOutput('Script execution started...', 'info');
+            } else {
+                console.error('❌ Execution failed:', result);
+                this.addScriptOutput(`Execution failed: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            console.error('❌ Execution error:', error);
+            this.addScriptOutput(`Execution error: ${error.message}`, 'error');
+        }
+    }
+
+    addScriptOutput(message, level = 'info') {
+        const output = document.getElementById('scriptOutput');
+        if (!output) return;
+
+        const timestamp = new Date().toLocaleTimeString();
+        const levelClass = level === 'error' ? 'text-danger' : level === 'success' ? 'text-success' : 'text-light';
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = levelClass;
+        messageDiv.innerHTML = `[${timestamp}] ${message}`;
+        
+        output.appendChild(messageDiv);
+        output.scrollTop = output.scrollHeight;
     }
 }
 

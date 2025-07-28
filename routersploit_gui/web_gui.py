@@ -6,6 +6,10 @@ import time
 from typing import Any, Dict, List, Optional
 import secrets
 import base64
+import ast
+import inspect
+import os
+from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, session
 from flask_socketio import SocketIO, emit
@@ -159,6 +163,11 @@ class RouterSploitWebGUI:
         
         # Console clients tracking
         self.console_clients: Dict[str, bool] = {}  # session_id -> is_active
+        
+        # Custom scripts functionality
+        self.custom_scripts_dir = Path("custom_scripts")
+        self.custom_scripts_dir.mkdir(exist_ok=True)
+        self.custom_modules: List[ModuleMeta] = []
         
         # Setup auth, routes, and socket handlers
         self._setup_auth()
@@ -568,9 +577,12 @@ class RouterSploitWebGUI:
             """Get all modules as a tree structure."""
             # Convert the tree to a JSON-serializable format
             json_tree = self._serialize_tree(self.module_tree)
+            regular_modules_count = len(self.modules) - len(self.custom_modules)
             return jsonify({
                 'tree': json_tree,
-                'count': len(self.modules)
+                'count': len(self.modules),
+                'regular_modules': regular_modules_count,
+                'custom_modules': len(self.custom_modules)
             })
         
         @self.app.route('/api/module/<path:module_path>')
@@ -893,6 +905,137 @@ class RouterSploitWebGUI:
             except Exception as e:
                 logger.error("Failed to save ExploitDB API key", error=str(e))
                 return jsonify({'error': f'Failed to save ExploitDB API key: {str(e)}'}), 500
+
+        # Custom Scripts API endpoints
+        @self.app.route('/api/custom-scripts')
+        @login_required
+        def get_custom_scripts() -> Any:
+            """Get list of uploaded custom scripts."""
+            try:
+                scripts = []
+                if self.custom_scripts_dir.exists():
+                    for script_file in self.custom_scripts_dir.glob("*.py"):
+                        script_info = self._get_script_info(script_file)
+                        scripts.append(script_info)
+                
+                return jsonify({
+                    'scripts': scripts,
+                    'count': len(scripts)
+                })
+            except Exception as e:
+                logger.error("Failed to get custom scripts", error=str(e))
+                return jsonify({'error': f'Failed to get custom scripts: {str(e)}'}), 500
+
+        @self.app.route('/api/custom-scripts/upload', methods=['POST'])
+        @login_required
+        def upload_custom_script() -> Any:
+            """Upload a new custom script."""
+            try:
+                if 'file' not in request.files:
+                    return jsonify({'error': 'No file provided'}), 400
+                
+                file = request.files['file']
+                if file.filename == '':
+                    return jsonify({'error': 'No file selected'}), 400
+                
+                if not file.filename.endswith('.py'):
+                    return jsonify({'error': 'File must be a Python script (.py)'}), 400
+                
+                # Read and validate the script content
+                content = file.read().decode('utf-8')
+                validation_result = self._validate_script(content, file.filename)
+                
+                if not validation_result['valid']:
+                    return jsonify({
+                        'error': 'Script validation failed',
+                        'details': validation_result['errors']
+                    }), 400
+                
+                # Save the script
+                safe_filename = "".join(c for c in file.filename if c.isalnum() or c in '._-')
+                script_path = self.custom_scripts_dir / safe_filename
+                
+                # Check if file already exists
+                if script_path.exists():
+                    return jsonify({'error': f'Script {safe_filename} already exists'}), 409
+                
+                script_path.write_text(content)
+                
+                # Load the script as a module
+                custom_module = self._load_custom_script(script_path)
+                if custom_module:
+                    self.custom_modules.append(custom_module)
+                    self.modules.append(custom_module)
+                    
+                    # Rebuild module tree with custom scripts
+                    self.module_tree = self.module_loader.build_tree()
+                    self._add_custom_scripts_to_tree()
+                
+                logger.info("Custom script uploaded successfully", filename=safe_filename)
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Script {safe_filename} uploaded successfully',
+                    'filename': safe_filename
+                })
+                
+            except Exception as e:
+                logger.error("Failed to upload custom script", error=str(e))
+                return jsonify({'error': f'Failed to upload script: {str(e)}'}), 500
+
+        @self.app.route('/api/custom-scripts/<script_name>', methods=['DELETE'])
+        @login_required
+        def delete_custom_script(script_name: str) -> Any:
+            """Delete a custom script."""
+            try:
+                script_path = self.custom_scripts_dir / script_name
+                if not script_path.exists():
+                    return jsonify({'error': 'Script not found'}), 404
+                
+                # Remove from modules list
+                module_path = f"custom_scripts.{script_name[:-3]}"  # Remove .py extension
+                self.custom_modules = [m for m in self.custom_modules if m.dotted_path != module_path]
+                self.modules = [m for m in self.modules if m.dotted_path != module_path]
+                
+                # Clean up Python module cache
+                import sys
+                if module_path in sys.modules:
+                    del sys.modules[module_path]
+                
+                # Delete the file
+                script_path.unlink()
+                
+                # Rebuild module tree with custom scripts
+                self.module_tree = self.module_loader.build_tree()
+                if self.custom_modules:
+                    self._add_custom_scripts_to_tree()
+                
+                logger.info("Custom script deleted successfully", filename=script_name)
+                return jsonify({
+                    'status': 'success',
+                    'message': f'Script {script_name} deleted successfully'
+                })
+                
+            except Exception as e:
+                logger.error("Failed to delete custom script", error=str(e))
+                return jsonify({'error': f'Failed to delete script: {str(e)}'}), 500
+
+        @self.app.route('/api/custom-scripts/<script_name>/validate', methods=['POST'])
+        @login_required
+        def validate_custom_script(script_name: str) -> Any:
+            """Validate a custom script."""
+            try:
+                script_path = self.custom_scripts_dir / script_name
+                if not script_path.exists():
+                    return jsonify({'error': 'Script not found'}), 404
+                
+                content = script_path.read_text()
+                validation_result = self._validate_script(content, script_name)
+                
+                return jsonify(validation_result)
+                
+            except Exception as e:
+                logger.error("Failed to validate custom script", error=str(e))
+                return jsonify({'error': f'Failed to validate script: {str(e)}'}), 500
     
     def _setup_socket_handlers(self) -> None:
         """Setup SocketIO event handlers."""
@@ -1071,11 +1214,51 @@ class RouterSploitWebGUI:
         try:
             logger.info("Loading RouterSploit modules...")
             self.modules = self.module_loader.discover_modules()
+            self._load_custom_scripts()
             self.module_tree = self.module_loader.build_tree()
+            
+            # Add custom scripts to the tree
+            if self.custom_modules:
+                self._add_custom_scripts_to_tree()
+                
             logger.info("Modules loaded successfully", count=len(self.modules))
         except Exception as e:
             logger.error("Failed to load modules", error=str(e))
             raise
+
+    def _load_custom_scripts(self) -> None:
+        """Load custom scripts from the custom_scripts directory."""
+        try:
+            if not self.custom_scripts_dir.exists():
+                return
+                
+            logger.info("Loading custom scripts...")
+            custom_count = 0
+            
+            for script_file in self.custom_scripts_dir.glob("*.py"):
+                custom_module = self._load_custom_script(script_file)
+                if custom_module:
+                    self.custom_modules.append(custom_module)
+                    self.modules.append(custom_module)
+                    custom_count += 1
+            
+            logger.info("Custom scripts loaded", count=custom_count)
+            
+        except Exception as e:
+            logger.error("Failed to load custom scripts", error=str(e))
+
+    def _add_custom_scripts_to_tree(self) -> None:
+        """Add custom scripts to the module tree."""
+        if not self.custom_modules:
+            return
+            
+        if 'custom_scripts' not in self.module_tree:
+            self.module_tree['custom_scripts'] = {}
+        
+        # Add each custom module to the tree
+        for module in self.custom_modules:
+            script_name = module.dotted_path.split('.')[-1]
+            self.module_tree['custom_scripts'][script_name] = module
     
     def _find_module_by_path(self, path: str) -> Optional[ModuleMeta]:
         """Find a module by its dotted path."""
@@ -1337,6 +1520,11 @@ class RouterSploitWebGUI:
     
     def _on_module_output(self, line: str, level: str) -> None:
         """Handle output from running module."""
+        # Debug output to stderr to avoid recursion
+        import sys
+        sys.__stderr__.write(f"[DEBUG] _on_module_output called: {line}\n")
+        sys.__stderr__.flush()
+        
         self.socketio.emit('output', {
             'line': line,
             'level': level,
@@ -1457,6 +1645,192 @@ $ """
         logger.info("RCE session created notification sent", 
                    session_id=session_info.get('session_id'),
                    target=session_info.get('target'))
+
+    def _validate_script(self, content: str, filename: str) -> Dict[str, Any]:
+        """Validate a custom script for security and structure."""
+        errors = []
+        warnings = []
+        
+        try:
+            # Parse the script to AST
+            tree = ast.parse(content)
+            
+            # Check for required class and methods
+            has_exploit_class = False
+            has_run_method = False
+            class_name = None
+            
+            for node in ast.walk(tree):
+                # Check for dangerous imports and functions
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name in ['os', 'subprocess', 'eval', 'exec']:
+                            warnings.append(f"Potentially dangerous import: {alias.name}")
+                
+                if isinstance(node, ast.ImportFrom):
+                    if node.module in ['os', 'subprocess']:
+                        warnings.append(f"Potentially dangerous import from: {node.module}")
+                
+                # Check for class definition
+                if isinstance(node, ast.ClassDef):
+                    has_exploit_class = True
+                    class_name = node.name
+                    
+                    # Check if class has a run method
+                    for item in node.body:
+                        if isinstance(item, ast.FunctionDef) and item.name == 'run':
+                            has_run_method = True
+            
+            if not has_exploit_class:
+                errors.append("Script must contain at least one class definition")
+            
+            if has_exploit_class and not has_run_method:
+                errors.append("Exploit class must have a 'run' method")
+            
+            # Check syntax
+            compile(content, filename, 'exec')
+            
+        except SyntaxError as e:
+            errors.append(f"Syntax error: {e}")
+        except Exception as e:
+            errors.append(f"Validation error: {e}")
+        
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'class_name': class_name
+        }
+
+    def _load_custom_script(self, script_path: Path) -> Optional[ModuleMeta]:
+        """Load a custom script as a ModuleMeta object."""
+        try:
+            import importlib.util
+            import sys
+            
+            # Create module spec
+            module_name = f"custom_scripts.{script_path.stem}"
+            
+            # Clean up any existing module to avoid conflicts
+            if module_name in sys.modules:
+                del sys.modules[module_name]
+            
+            spec = importlib.util.spec_from_file_location(module_name, script_path)
+            if not spec or not spec.loader:
+                logger.error("Failed to create module spec", path=str(script_path))
+                return None
+            
+            # Load the module
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)
+            
+            # Find the exploit class
+            exploit_classes = []
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if hasattr(obj, 'run') and name != 'object':
+                    exploit_classes.append((name, obj))
+            
+            if not exploit_classes:
+                logger.error("No valid exploit class found", path=str(script_path))
+                return None
+            
+            # Use the first valid exploit class
+            class_name, exploit_class = exploit_classes[0]
+            
+            # Create an instance to extract options
+            try:
+                instance = exploit_class()
+                options = self._extract_custom_script_options(instance)
+            except Exception as e:
+                logger.warning("Failed to extract options", error=str(e))
+                options = {}
+            
+            # Create ModuleMeta
+            description = getattr(exploit_class, '__doc__', '') or f"Custom script: {script_path.name}"
+            
+            module_meta = ModuleMeta(
+                dotted_path=module_name,
+                cls=exploit_class,
+                opts=options,
+                category="custom_scripts",
+                name=class_name.replace('_', ' ').title(),
+                description=description.strip(),
+                cve_list=getattr(exploit_class, 'cve', [])
+            )
+            
+            logger.info("Custom script loaded successfully", 
+                       name=module_meta.name, 
+                       path=module_name)
+            
+            return module_meta
+            
+        except Exception as e:
+            logger.error("Failed to load custom script", 
+                        path=str(script_path), 
+                        error=str(e))
+            return None
+
+    def _extract_custom_script_options(self, instance: Any) -> Dict[str, Dict[str, Any]]:
+        """Extract options from a custom script instance."""
+        options = {}
+        
+        # Common default options for custom scripts
+        default_options = {
+            'target': {'value': '', 'description': 'Target IP address', 'required': True},
+            'port': {'value': 80, 'description': 'Target port', 'required': True},
+            'timeout': {'value': 10, 'description': 'Connection timeout in seconds', 'required': False}
+        }
+        
+        # Try to get options from the instance
+        if hasattr(instance, 'target'):
+            default_options['target']['value'] = getattr(instance, 'target', '')
+        if hasattr(instance, 'port'):
+            default_options['port']['value'] = getattr(instance, 'port', 80)
+        if hasattr(instance, 'timeout'):
+            default_options['timeout']['value'] = getattr(instance, 'timeout', 10)
+        
+        # Look for additional custom options
+        for attr_name in dir(instance):
+            if not attr_name.startswith('_') and attr_name not in ['run', 'target', 'port', 'timeout']:
+                attr_value = getattr(instance, attr_name, None)
+                if not callable(attr_value):
+                    default_options[attr_name] = {
+                        'value': attr_value,
+                        'description': f'Custom option: {attr_name}',
+                        'required': False
+                    }
+        
+        return default_options
+
+    def _get_script_info(self, script_path: Path) -> Dict[str, Any]:
+        """Get information about a script file."""
+        try:
+            content = script_path.read_text()
+            validation = self._validate_script(content, script_path.name)
+            
+            # Get file stats
+            stat = script_path.stat()
+            
+            return {
+                'name': script_path.name,
+                'size': stat.st_size,
+                'modified': int(stat.st_mtime),
+                'valid': validation['valid'],
+                'class_name': validation.get('class_name', 'Unknown'),
+                'errors': validation['errors'],
+                'warnings': validation['warnings']
+            }
+        except Exception as e:
+            return {
+                'name': script_path.name,
+                'size': 0,
+                'modified': 0,
+                'valid': False,
+                'class_name': 'Unknown',
+                'errors': [str(e)],
+                'warnings': []
+            }
     
     def run(self, debug: bool = False) -> None:
         """Start the web server.

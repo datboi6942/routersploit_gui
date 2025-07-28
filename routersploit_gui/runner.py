@@ -64,17 +64,22 @@ class ModuleRunner(threading.Thread):
             module_instance = self.module_meta.cls()
             self._configure_module(module_instance)
             
-            # Execute with output capture
-            with self._capture_output() as captured:
-                module_instance.run()
-                
-            # Process captured output
-            output_lines = captured.getvalue().splitlines()
-            for line in output_lines:
-                if line.strip():
-                    self._queue_output(line, "info")
+            # Check if this is a custom script and handle differently
+            if self.module_meta.category == "custom_scripts":
+                success = self._execute_custom_script(module_instance)
+            else:
+                # Execute with output capture for regular modules
+                with self._capture_output() as captured:
+                    module_instance.run()
                     
-            success = True
+                # Process captured output
+                output_lines = captured.getvalue().splitlines()
+                for line in output_lines:
+                    if line.strip():
+                        self._queue_output(line, "info")
+                        
+                success = True
+                
             logger.info("Module execution completed successfully")
             
         except KeyboardInterrupt:
@@ -322,9 +327,16 @@ class ModuleRunner(threading.Thread):
             line: The output line
             level: Output level (info, error, warning)
         """
+        import sys
         try:
+            sys.__stderr__.write(f"[DEBUG] _queue_output calling on_output: {line}\n")
+            sys.__stderr__.flush()
             self.on_output(line, level)
+            sys.__stderr__.write(f"[DEBUG] _queue_output on_output call successful\n")
+            sys.__stderr__.flush()
         except Exception as e:
+            sys.__stderr__.write(f"[DEBUG] Failed to queue output: {str(e)}\n")
+            sys.__stderr__.flush()
             logger.debug("Failed to queue output", error=str(e))
             
     def stop(self) -> None:
@@ -339,6 +351,72 @@ class ModuleRunner(threading.Thread):
             True if stop has been requested
         """
         return self._stop_event.is_set()
+
+    def _execute_custom_script(self, module_instance) -> bool:
+        """Execute a custom script with real-time output capture."""
+        import sys
+        import io
+        
+        class RealTimeCapture:
+            """Capture stdout/stderr in real-time and send to output queue."""
+            def __init__(self, queue_output_func):
+                self.queue_output = queue_output_func
+                self.buffer = ""
+                
+            def write(self, text):
+                if text:
+                    # Send each line immediately
+                    lines = (self.buffer + text).split('\n')
+                    self.buffer = lines[-1]  # Keep incomplete line in buffer
+                    
+                    for line in lines[:-1]:  # Process complete lines
+                        if line.strip():
+                            # Use original stderr for debug to avoid recursion
+                            sys.__stderr__.write(f"[DEBUG] Sending line to queue: {line.strip()}\n")
+                            sys.__stderr__.flush()
+                            self.queue_output(line.strip(), "info")
+                    
+                    # Also send to original stdout for debugging (but don't duplicate the flush)
+                    original_stdout = sys.__stdout__
+                    original_stdout.write(text)
+                    original_stdout.flush()
+                    
+            def flush(self):
+                # Flush any remaining buffer
+                if self.buffer.strip():
+                    self.queue_output(self.buffer.strip(), "info")
+                    self.buffer = ""
+                sys.__stdout__.flush()
+
+        # Set up real-time capture
+        real_time_capture = RealTimeCapture(self._queue_output)
+        
+        # Redirect stdout and stderr to our capture
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        
+        try:
+            sys.stdout = real_time_capture
+            sys.stderr = real_time_capture
+            
+            # Execute the script
+            module_instance.run()
+            
+            # Flush any remaining output
+            real_time_capture.flush()
+            
+            return True
+            
+        except Exception as e:
+            error_msg = f"Custom script execution failed: {str(e)}"
+            self._queue_output(error_msg, "error")
+            logger.error("Custom script execution failed", error=str(e))
+            return False
+            
+        finally:
+            # Restore original stdout/stderr
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
 
 
 class RunnerManager:

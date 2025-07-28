@@ -78,6 +78,11 @@
                             <i class="fas fa-robot"></i> Auto-Own
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link fade-in" id="custom-scripts-tab" data-bs-toggle="tab" data-bs-target="#custom-scripts-panel" type="button" role="tab">
+                            <i class="fas fa-file-code"></i> Custom Scripts <span id="customScriptsCount" class="badge bg-secondary ms-1">0</span>
+                        </button>
+                    </li>
                 </ul>
             </div>
 
@@ -401,6 +406,51 @@
                                                     <i class="fas fa-search"></i> No active sessions found
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Scripts Tab -->
+                    <div class="tab-pane fade h-100" id="custom-scripts-panel" role="tabpanel">
+                        <div class="row h-100">
+                            <div class="col-md-4">
+                                <!-- Scripts List -->
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h5 class="mb-0"><i class="fas fa-file-code text-neon"></i> Custom Scripts</h5>
+                                        <div class="mt-2">
+                                            <input type="file" id="scriptUpload" accept=".py" style="display: none;">
+                                            <button id="uploadScriptBtn" class="btn btn-sm btn-primary me-2">
+                                                <i class="fas fa-upload"></i> Upload Script
+                                            </button>
+                                            <button id="refreshScriptsBtn" class="btn btn-sm btn-secondary">
+                                                <i class="fas fa-sync"></i> Refresh
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <div id="customScriptsList" class="list-group list-group-flush">
+                                            <div class="text-center text-muted p-3">
+                                                <i class="fas fa-file-code"></i><br>No scripts uploaded
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <!-- Script Execution Panel -->
+                                <div class="card h-100">
+                                    <div class="card-header">
+                                        <h5 class="mb-0" id="selectedScriptName">
+                                            <i class="fas fa-play text-neon"></i> Select a script to execute
+                                        </h5>
+                                    </div>
+                                    <div class="card-body" id="scriptExecutionContent">
+                                        <div class="text-center text-muted">
+                                            <i class="fas fa-arrow-left"></i> Select a script from the left panel
                                         </div>
                                     </div>
                                 </div>
