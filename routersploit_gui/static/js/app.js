@@ -57,6 +57,9 @@ class RouterSploitGUI {
             // Initialize console
             this.initializeConsole();
             
+            // Initialize theme
+            this.initializeTheme();
+            
             // Mark as initialized
             this.initialized = true;
             console.log('✅ Core functionality initialized successfully');
@@ -204,6 +207,30 @@ class RouterSploitGUI {
             console.log('✅ Quick target input handler added');
         } else {
             console.warn('⚠️ Quick target input not found');
+        }
+
+        // Fullscreen toggle button
+        const fullscreenToggle = document.getElementById('fullscreenToggle');
+        if (fullscreenToggle) {
+            fullscreenToggle.addEventListener('click', () => {
+                console.log('🔍 Fullscreen toggle clicked');
+                this.toggleFullscreen();
+            });
+            console.log('✅ Fullscreen toggle handler added');
+        } else {
+            console.warn('⚠️ Fullscreen toggle button not found');
+        }
+
+        // Theme toggle button
+        const themeToggle = document.getElementById('themeToggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                console.log('🎨 Theme toggle clicked');
+                this.toggleTheme();
+            });
+            console.log('✅ Theme toggle handler added');
+        } else {
+            console.warn('⚠️ Theme toggle button not found');
         }
     }
 
@@ -2524,6 +2551,553 @@ Type 'help' for available offline commands.`;
         
         output.appendChild(messageDiv);
         output.scrollTop = output.scrollHeight;
+    }
+
+    // Fullscreen toggle functionality
+    toggleFullscreen() {
+        console.log('🔍 Toggling fullscreen mode');
+        
+        const fullscreenBtn = document.getElementById('fullscreenToggle');
+        const icon = fullscreenBtn?.querySelector('i');
+        
+        try {
+            if (!document.fullscreenElement) {
+                // Enter fullscreen
+                document.documentElement.requestFullscreen().then(() => {
+                    console.log('✅ Entered fullscreen mode');
+                    if (icon) {
+                        icon.className = 'fas fa-compress';
+                        fullscreenBtn.title = 'Exit Fullscreen';
+                    }
+                }).catch((error) => {
+                    console.error('❌ Failed to enter fullscreen:', error);
+                });
+            } else {
+                // Exit fullscreen
+                document.exitFullscreen().then(() => {
+                    console.log('✅ Exited fullscreen mode');
+                    if (icon) {
+                        icon.className = 'fas fa-expand';
+                        fullscreenBtn.title = 'Toggle Fullscreen';
+                    }
+                }).catch((error) => {
+                    console.error('❌ Failed to exit fullscreen:', error);
+                });
+            }
+        } catch (error) {
+            console.error('❌ Fullscreen API error:', error);
+            alert('Fullscreen mode is not supported in your browser.');
+        }
+    }
+
+    // Theme toggle functionality
+    toggleTheme() {
+        console.log('🎨 Toggling theme');
+        
+        // Available themes (matching config.py AVAILABLE_THEMES)
+        const themes = [
+            'DarkBlue3', 'DarkGrey', 'Dark', 'DarkAmber', 'DarkBrown', 
+            'DarkGreen', 'DarkPurple', 'DarkRed', 'DarkTeal', 'LightBlue', 
+            'LightGreen', 'LightGrey', 'Default1', 'DefaultNoMoreNagging', 
+            'Material1', 'Material2', 'Reddit', 'Topanga', 'GreenTan', 
+            'BrownBlue', 'BrightColors', 'NeutralBlue', 'Kay', 'TanBlue'
+        ];
+        
+        // Get current theme from localStorage or default to first theme
+        let currentTheme = localStorage.getItem('gui-theme') || themes[0];
+        let currentIndex = themes.indexOf(currentTheme);
+        
+        // Move to next theme (cycle back to start if at end)
+        const nextIndex = (currentIndex + 1) % themes.length;
+        const nextTheme = themes[nextIndex];
+        
+        // Apply theme by updating CSS classes
+        this.applyTheme(nextTheme);
+        
+        // Save theme preference
+        localStorage.setItem('gui-theme', nextTheme);
+        
+        console.log(`🎨 Theme changed from ${currentTheme} to ${nextTheme}`);
+        
+        // Show theme change notification
+        this.showThemeNotification(nextTheme);
+    }
+
+    // Apply theme by updating the actual CSS custom properties
+    applyTheme(themeName) {
+        console.log(`🎨 Applying theme: ${themeName}`);
+        
+        const root = document.documentElement;
+        
+        // Define comprehensive theme color schemes that match the CSS structure
+        const themeColors = {
+            'DarkBlue3': {
+                primaryNeon: '#00aaff',
+                secondaryNeon: '#0066cc', 
+                accentNeon: '#44aaff',
+                successNeon: '#00cc88',
+                dangerNeon: '#ff4466',
+                warningNeon: '#ff8800',
+                infoNeon: '#4080ff',
+                bgPrimary: '#0a0a1a',
+                bgSecondary: '#1a1a3a',
+                bgTertiary: '#2a2a4a',
+                bgCard: '#151528',
+                textPrimary: '#ffffff',
+                textSecondary: '#ccddff',
+                textMuted: '#8899bb'
+            },
+            'DarkGrey': {
+                primaryNeon: '#888888',
+                secondaryNeon: '#666666',
+                accentNeon: '#aaaaaa',
+                successNeon: '#66aa66',
+                dangerNeon: '#aa6666',
+                warningNeon: '#aa8866',
+                infoNeon: '#6688aa',
+                bgPrimary: '#1a1a1a',
+                bgSecondary: '#2a2a2a',
+                bgTertiary: '#3a3a3a',
+                bgCard: '#252525',
+                textPrimary: '#ffffff',
+                textSecondary: '#cccccc',
+                textMuted: '#888888'
+            },
+            'Dark': {
+                primaryNeon: '#333333',
+                secondaryNeon: '#555555',
+                accentNeon: '#777777',
+                successNeon: '#004400',
+                dangerNeon: '#440000',
+                warningNeon: '#442200',
+                infoNeon: '#002244',
+                bgPrimary: '#000000',
+                bgSecondary: '#111111',
+                bgTertiary: '#222222',
+                bgCard: '#0a0a0a',
+                textPrimary: '#ffffff',
+                textSecondary: '#cccccc',
+                textMuted: '#666666'
+            },
+            'DarkAmber': {
+                primaryNeon: '#ffaa00',
+                secondaryNeon: '#cc8800',
+                accentNeon: '#ffcc44',
+                successNeon: '#88aa00',
+                dangerNeon: '#ff4400',
+                warningNeon: '#ff8800',
+                infoNeon: '#aa6600',
+                bgPrimary: '#1a1000',
+                bgSecondary: '#2a1a00',
+                bgTertiary: '#3a2a00',
+                bgCard: '#252000',
+                textPrimary: '#ffffff',
+                textSecondary: '#ffeeaa',
+                textMuted: '#ccaa66'
+            },
+            'DarkBrown': {
+                primaryNeon: '#aa6644',
+                secondaryNeon: '#884422',
+                accentNeon: '#cc8866',
+                successNeon: '#668844',
+                dangerNeon: '#aa4422',
+                warningNeon: '#aa6622',
+                infoNeon: '#664488',
+                bgPrimary: '#1a1008',
+                bgSecondary: '#2a1a10',
+                bgTertiary: '#3a2a18',
+                bgCard: '#251a10',
+                textPrimary: '#ffffff',
+                textSecondary: '#eeddcc',
+                textMuted: '#aa8866'
+            },
+            'DarkGreen': {
+                primaryNeon: '#00ff88',
+                secondaryNeon: '#00cc66',
+                accentNeon: '#44ff99',
+                successNeon: '#00ff00',
+                dangerNeon: '#ff4444',
+                warningNeon: '#ffaa00',
+                infoNeon: '#4499ff',
+                bgPrimary: '#001a08',
+                bgSecondary: '#002a10',
+                bgTertiary: '#003a18',
+                bgCard: '#00250c',
+                textPrimary: '#ffffff',
+                textSecondary: '#ccffdd',
+                textMuted: '#88cc99'
+            },
+            'DarkPurple': {
+                primaryNeon: '#aa44ff',
+                secondaryNeon: '#8822cc',
+                accentNeon: '#cc66ff',
+                successNeon: '#6688ff',
+                dangerNeon: '#ff4488',
+                warningNeon: '#ff8844',
+                infoNeon: '#8844ff',
+                bgPrimary: '#18081a',
+                bgSecondary: '#28102a',
+                bgTertiary: '#38183a',
+                bgCard: '#201025',
+                textPrimary: '#ffffff',
+                textSecondary: '#eeccff',
+                textMuted: '#bb88cc'
+            },
+            'DarkRed': {
+                primaryNeon: '#ff4444',
+                secondaryNeon: '#cc2222',
+                accentNeon: '#ff6666',
+                successNeon: '#44ff44',
+                dangerNeon: '#ff0000',
+                warningNeon: '#ff8800',
+                infoNeon: '#4488ff',
+                bgPrimary: '#1a0808',
+                bgSecondary: '#2a1010',
+                bgTertiary: '#3a1818',
+                bgCard: '#251010',
+                textPrimary: '#ffffff',
+                textSecondary: '#ffcccc',
+                textMuted: '#cc8888'
+            },
+            'DarkTeal': {
+                primaryNeon: '#00ffcc',
+                secondaryNeon: '#00ccaa',
+                accentNeon: '#44ffdd',
+                successNeon: '#00ff88',
+                dangerNeon: '#ff6644',
+                warningNeon: '#ffaa44',
+                infoNeon: '#44aaff',
+                bgPrimary: '#081a18',
+                bgSecondary: '#102a28',
+                bgTertiary: '#183a38',
+                bgCard: '#102520',
+                textPrimary: '#ffffff',
+                textSecondary: '#ccfff8',
+                textMuted: '#88ccaa'
+            },
+            'LightBlue': {
+                primaryNeon: '#0066cc',
+                secondaryNeon: '#4499ff',
+                accentNeon: '#0088ff',
+                successNeon: '#0088aa',
+                dangerNeon: '#cc4466',
+                warningNeon: '#cc8844',
+                infoNeon: '#4488cc',
+                bgPrimary: '#f0f8ff',
+                bgSecondary: '#e6f2ff',
+                bgTertiary: '#ddeeff',
+                bgCard: '#f8fbff',
+                textPrimary: '#003366',
+                textSecondary: '#004488',
+                textMuted: '#6699cc'
+            },
+            'LightGreen': {
+                primaryNeon: '#00aa44',
+                secondaryNeon: '#44cc66',
+                accentNeon: '#00cc55',
+                successNeon: '#008844',
+                dangerNeon: '#cc4444',
+                warningNeon: '#cc8844',
+                infoNeon: '#4488cc',
+                bgPrimary: '#f0fff8',
+                bgSecondary: '#e6ffe6',
+                bgTertiary: '#ddffdd',
+                bgCard: '#f8fffb',
+                textPrimary: '#003322',
+                textSecondary: '#004433',
+                textMuted: '#66aa88'
+            },
+                         'LightGrey': {
+                 primaryNeon: '#666666',
+                 secondaryNeon: '#888888',
+                 accentNeon: '#777777',
+                 successNeon: '#559955',
+                 dangerNeon: '#cc5555',
+                 warningNeon: '#cc8855',
+                 infoNeon: '#5588cc',
+                 bgPrimary: '#f8f8f8',
+                 bgSecondary: '#eeeeee',
+                 bgTertiary: '#e4e4e4',
+                 bgCard: '#fafafa',
+                 textPrimary: '#333333',
+                 textSecondary: '#555555',
+                 textMuted: '#888888'
+             },
+             'Default1': {
+                 primaryNeon: '#007bff',
+                 secondaryNeon: '#6c757d',
+                 accentNeon: '#17a2b8',
+                 successNeon: '#28a745',
+                 dangerNeon: '#dc3545',
+                 warningNeon: '#ffc107',
+                 infoNeon: '#17a2b8',
+                 bgPrimary: '#ffffff',
+                 bgSecondary: '#f8f9fa',
+                 bgTertiary: '#e9ecef',
+                 bgCard: '#ffffff',
+                 textPrimary: '#212529',
+                 textSecondary: '#495057',
+                 textMuted: '#6c757d'
+             },
+             'DefaultNoMoreNagging': {
+                 primaryNeon: '#0056b3',
+                 secondaryNeon: '#5a6268',
+                 accentNeon: '#138496',
+                 successNeon: '#1e7e34',
+                 dangerNeon: '#bd2130',
+                 warningNeon: '#e0a800',
+                 infoNeon: '#117a8b',
+                 bgPrimary: '#f5f5f5',
+                 bgSecondary: '#e9e9e9',
+                 bgTertiary: '#ddd',
+                 bgCard: '#fff',
+                 textPrimary: '#2c3e50',
+                 textSecondary: '#34495e',
+                 textMuted: '#7f8c8d'
+             },
+             'Material1': {
+                 primaryNeon: '#2196f3',
+                 secondaryNeon: '#3f51b5',
+                 accentNeon: '#03dac6',
+                 successNeon: '#4caf50',
+                 dangerNeon: '#f44336',
+                 warningNeon: '#ff9800',
+                 infoNeon: '#00bcd4',
+                 bgPrimary: '#fafafa',
+                 bgSecondary: '#f5f5f5',
+                 bgTertiary: '#eeeeee',
+                 bgCard: '#ffffff',
+                 textPrimary: '#212121',
+                 textSecondary: '#757575',
+                 textMuted: '#9e9e9e'
+             },
+             'Material2': {
+                 primaryNeon: '#673ab7',
+                 secondaryNeon: '#9c27b0',
+                 accentNeon: '#e91e63',
+                 successNeon: '#8bc34a',
+                 dangerNeon: '#ff5722',
+                 warningNeon: '#ffc107',
+                 infoNeon: '#2196f3',
+                 bgPrimary: '#303030',
+                 bgSecondary: '#424242',
+                 bgTertiary: '#616161',
+                 bgCard: '#424242',
+                 textPrimary: '#ffffff',
+                 textSecondary: '#e0e0e0',
+                 textMuted: '#bdbdbd'
+             },
+             'Reddit': {
+                 primaryNeon: '#ff4500',
+                 secondaryNeon: '#ff6314',
+                 accentNeon: '#ffa500',
+                 successNeon: '#25d366',
+                 dangerNeon: '#ee0000',
+                 warningNeon: '#ffb000',
+                 infoNeon: '#0079d3',
+                 bgPrimary: '#1a1a1b',
+                 bgSecondary: '#272729',
+                 bgTertiary: '#343536',
+                 bgCard: '#1a1a1b',
+                 textPrimary: '#d7dadc',
+                 textSecondary: '#818384',
+                 textMuted: '#6f7071'
+             },
+             'Topanga': {
+                 primaryNeon: '#d2691e',
+                 secondaryNeon: '#cd853f',
+                 accentNeon: '#daa520',
+                 successNeon: '#228b22',
+                 dangerNeon: '#b22222',
+                 warningNeon: '#ff8c00',
+                 infoNeon: '#4682b4',
+                 bgPrimary: '#2f1b14',
+                 bgSecondary: '#3d241a',
+                 bgTertiary: '#4a2c20',
+                 bgCard: '#341f16',
+                 textPrimary: '#f5deb3',
+                 textSecondary: '#deb887',
+                 textMuted: '#bc9a6a'
+             },
+             'GreenTan': {
+                 primaryNeon: '#6b8e23',
+                 secondaryNeon: '#9acd32',
+                 accentNeon: '#d2b48c',
+                 successNeon: '#32cd32',
+                 dangerNeon: '#dc143c',
+                 warningNeon: '#ff8c00',
+                 infoNeon: '#4682b4',
+                 bgPrimary: '#2f4f2f',
+                 bgSecondary: '#556b2f',
+                 bgTertiary: '#6b8e23',
+                 bgCard: '#3c5a3c',
+                 textPrimary: '#f5f5dc',
+                 textSecondary: '#deb887',
+                 textMuted: '#bc9a6a'
+             },
+             'BrownBlue': {
+                 primaryNeon: '#8b4513',
+                 secondaryNeon: '#4682b4',
+                 accentNeon: '#5f9ea0',
+                 successNeon: '#20b2aa',
+                 dangerNeon: '#dc143c',
+                 warningNeon: '#daa520',
+                 infoNeon: '#4169e1',
+                 bgPrimary: '#2f2f2f',
+                 bgSecondary: '#3f3f3f',
+                 bgTertiary: '#4f4f4f',
+                 bgCard: '#383838',
+                 textPrimary: '#f5deb3',
+                 textSecondary: '#deb887',
+                 textMuted: '#bc9a6a'
+             },
+             'BrightColors': {
+                 primaryNeon: '#ff1493',
+                 secondaryNeon: '#00ff00',
+                 accentNeon: '#ffff00',
+                 successNeon: '#00ff7f',
+                 dangerNeon: '#ff0000',
+                 warningNeon: '#ffa500',
+                 infoNeon: '#00bfff',
+                 bgPrimary: '#000000',
+                 bgSecondary: '#1a1a1a',
+                 bgTertiary: '#333333',
+                 bgCard: '#0a0a0a',
+                 textPrimary: '#ffffff',
+                 textSecondary: '#ffff00',
+                 textMuted: '#ff69b4'
+             },
+             'NeutralBlue': {
+                 primaryNeon: '#4a90e2',
+                 secondaryNeon: '#7bb3f0',
+                 accentNeon: '#a8d0f0',
+                 successNeon: '#5cb85c',
+                 dangerNeon: '#d9534f',
+                 warningNeon: '#f0ad4e',
+                 infoNeon: '#5bc0de',
+                 bgPrimary: '#f8f9fa',
+                 bgSecondary: '#e9ecef',
+                 bgTertiary: '#dee2e6',
+                 bgCard: '#ffffff',
+                 textPrimary: '#495057',
+                 textSecondary: '#6c757d',
+                 textMuted: '#868e96'
+             },
+             'Kay': {
+                 primaryNeon: '#708090',
+                 secondaryNeon: '#778899',
+                 accentNeon: '#b0c4de',
+                 successNeon: '#90ee90',
+                 dangerNeon: '#f08080',
+                 warningNeon: '#f0e68c',
+                 infoNeon: '#87ceeb',
+                 bgPrimary: '#f5f5f5',
+                 bgSecondary: '#e8e8e8',
+                 bgTertiary: '#dcdcdc',
+                 bgCard: '#ffffff',
+                 textPrimary: '#2f4f4f',
+                 textSecondary: '#696969',
+                 textMuted: '#a9a9a9'
+             },
+             'TanBlue': {
+                 primaryNeon: '#d2b48c',
+                 secondaryNeon: '#4682b4',
+                 accentNeon: '#5f9ea0',
+                 successNeon: '#20b2aa',
+                 dangerNeon: '#dc143c',
+                 warningNeon: '#daa520',
+                 infoNeon: '#6495ed',
+                 bgPrimary: '#2f2f4f',
+                 bgSecondary: '#3f3f5f',
+                 bgTertiary: '#4f4f6f',
+                 bgCard: '#383850',
+                 textPrimary: '#f5deb3',
+                 textSecondary: '#deb887',
+                 textMuted: '#bc9a6a'
+             }
+         };
+        
+        // Get the theme colors or default to DarkBlue3
+        const colors = themeColors[themeName] || themeColors['DarkBlue3'];
+        
+        // Update all the CSS custom properties that are actually used by the existing styles
+        root.style.setProperty('--primary-neon', colors.primaryNeon);
+        root.style.setProperty('--secondary-neon', colors.secondaryNeon);
+        root.style.setProperty('--accent-neon', colors.accentNeon);
+        root.style.setProperty('--success-neon', colors.successNeon);
+        root.style.setProperty('--danger-neon', colors.dangerNeon);
+        root.style.setProperty('--warning-neon', colors.warningNeon);
+        root.style.setProperty('--info-neon', colors.infoNeon);
+        
+        root.style.setProperty('--bg-primary', colors.bgPrimary);
+        root.style.setProperty('--bg-secondary', colors.bgSecondary);
+        root.style.setProperty('--bg-tertiary', colors.bgTertiary);
+        root.style.setProperty('--bg-card', colors.bgCard);
+        root.style.setProperty('--bg-glass', `${colors.bgSecondary}cc`); // Add alpha for glass effect
+        
+        root.style.setProperty('--text-primary', colors.textPrimary);
+        root.style.setProperty('--text-secondary', colors.textSecondary);
+        root.style.setProperty('--text-muted', colors.textMuted);
+        
+        // Update dependent properties that use CSS variables
+        root.style.setProperty('--border-neon', `2px solid ${colors.primaryNeon}`);
+        root.style.setProperty('--border-secondary', `1px solid ${colors.secondaryNeon}`);
+        
+        root.style.setProperty('--shadow-neon', 
+            `-2px 1px 0px ${colors.dangerNeon}, 0 0 20px ${colors.primaryNeon}, 0 0 40px ${colors.primaryNeon}, 0 0 60px ${colors.primaryNeon}`);
+        root.style.setProperty('--shadow-secondary', 
+            `0 0 15px ${colors.secondaryNeon}, 0 0 30px ${colors.secondaryNeon}`);
+        
+        root.style.setProperty('--gradient-primary', 
+            `linear-gradient(135deg, ${colors.primaryNeon}, ${colors.secondaryNeon})`);
+        root.style.setProperty('--gradient-secondary', 
+            `linear-gradient(135deg, ${colors.secondaryNeon}, ${colors.accentNeon})`);
+        root.style.setProperty('--gradient-dark', 
+            `linear-gradient(135deg, ${colors.bgPrimary}, ${colors.bgSecondary})`);
+        
+        console.log(`✅ Theme ${themeName} applied successfully`);
+    }
+
+    // Show theme change notification
+    showThemeNotification(themeName) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-info position-fixed';
+        notification.style.cssText = `
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 250px;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        `;
+        notification.innerHTML = `
+            <i class="fas fa-palette"></i> Theme changed to: <strong>${themeName}</strong>
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Fade in
+        setTimeout(() => {
+            notification.style.opacity = '1';
+        }, 10);
+        
+        // Fade out and remove after 3 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    // Initialize theme on page load
+    initializeTheme() {
+        const savedTheme = localStorage.getItem('gui-theme') || 'DarkBlue3';
+        this.applyTheme(savedTheme);
+        console.log(`🎨 Initialized with theme: ${savedTheme}`);
     }
 }
 
