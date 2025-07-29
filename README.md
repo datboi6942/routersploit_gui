@@ -37,9 +37,6 @@ poetry shell
 
 ```bash
 # Start the web server
-python demo.py
-
-# Or run directly
 python main.py
 
 # The GUI will be available at http://127.0.0.1:5000
@@ -59,7 +56,7 @@ python main.py --debug
 
 ## 🖥️ Usage
 
-1. **Start the Server**: Run `python demo.py` to start the web server
+1. **Start the Server**: Run `python main.py` to start the web server
 2. **Open Browser**: Navigate to `http://127.0.0.1:5000`
 3. **Select Module**: Browse the module tree and click on any module
 4. **Configure Options**: Fill in the required options (marked with red asterisk)
@@ -105,7 +102,7 @@ export EXPLOIT_DB_API_KEY="your-exploit-db-key"
 ### Usage
 
 1. **Web Interface**: Use the "Auto-Own" tab in the web GUI
-2. **Command Line**: Run `python demo_auto_own.py` for a demo
+2. **Command Line**: Use the Auto-Own feature through the web interface
 3. **API**: Use the `/api/auto-own/*` endpoints programmatically
 
 ## 🛠️ Architecture

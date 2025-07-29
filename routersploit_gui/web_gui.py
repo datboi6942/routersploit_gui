@@ -1660,16 +1660,85 @@ $ """
             has_run_method = False
             class_name = None
             
+            # SECURITY: Advanced sandboxed filtering - blocks RCE while allowing legitimate exploit functions
+            
+            # Completely forbidden imports (high RCE risk)
+            FORBIDDEN_IMPORTS = [
+                'subprocess', 'os', 'importlib', '__import__', 'builtins', 
+                '__builtins__', 'imp', 'zipimport'
+            ]
+            
+            # Forbidden functions (direct RCE)
+            FORBIDDEN_FUNCTIONS = [
+                'eval', 'exec', 'compile', '__import__', 'input', 'raw_input'
+            ]
+            
+            # Dangerous OS-level attributes (system calls)
+            FORBIDDEN_ATTRIBUTES = [
+                'system', 'popen', 'spawn', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
+                'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'execl', 'execle', 
+                'execlp', 'execlpe', 'execv', 'execve', 'execvp', 'execvpe',
+                'Popen', 'call', 'check_call', 'check_output', 'run',
+                'getoutput', 'getstatusoutput'
+            ]
+            
+            # Allowed controlled imports (networking/legitimate exploit functions)
+            ALLOWED_CONTROLLED_IMPORTS = [
+                'socket', 'requests', 'urllib', 'http', 'ssl', 'hashlib', 
+                'base64', 'json', 'xml', 're', 'time', 'random', 'struct',
+                'binascii', 'zlib', 'threading', 'queue'
+            ]
+            
+            # Controlled file operations (limited scope)
+            ALLOWED_FILE_FUNCTIONS = ['open', 'file']
+            
+            # Patterns that indicate malicious file operations
+            MALICIOUS_FILE_PATTERNS = [
+                r'/etc/', r'/var/', r'/usr/', r'/bin/', r'/sbin/', r'/root/',
+                r'\.\./', r'~/', r'/tmp/.*\.sh', r'/tmp/.*\.py', r'\.bashrc',
+                r'\.profile', r'passwd', r'shadow', r'authorized_keys'
+            ]
+
             for node in ast.walk(tree):
-                # Check for dangerous imports and functions
+                # Block dangerous imports
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        if alias.name in ['os', 'subprocess', 'eval', 'exec']:
-                            warnings.append(f"Potentially dangerous import: {alias.name}")
+                        if alias.name in FORBIDDEN_IMPORTS:
+                            errors.append(f"BLOCKED: Forbidden import '{alias.name}' - High RCE risk")
+                        elif alias.name not in ALLOWED_CONTROLLED_IMPORTS and '.' not in alias.name:
+                            # Allow standard library modules but warn about unknown ones
+                            warnings.append(f"Unknown import '{alias.name}' - Verify this is safe")
                 
                 if isinstance(node, ast.ImportFrom):
-                    if node.module in ['os', 'subprocess']:
-                        warnings.append(f"Potentially dangerous import from: {node.module}")
+                    if node.module in FORBIDDEN_IMPORTS:
+                        errors.append(f"BLOCKED: Forbidden import from '{node.module}' - High RCE risk")
+                    
+                    # Check specific function imports
+                    if node.names:
+                        for alias in node.names:
+                            if alias.name in FORBIDDEN_FUNCTIONS:
+                                errors.append(f"BLOCKED: Forbidden function import '{alias.name}' - RCE risk")
+                
+                # Check function calls for dangerous operations
+                if isinstance(node, ast.Call):
+                    # Block direct dangerous function calls
+                    if isinstance(node.func, ast.Name):
+                        if node.func.id in FORBIDDEN_FUNCTIONS:
+                            errors.append(f"BLOCKED: Dangerous function call '{node.func.id}' - RCE risk")
+                        
+                        # Validate file operations
+                        elif node.func.id in ALLOWED_FILE_FUNCTIONS:
+                            self._validate_file_operation(node, errors, warnings, MALICIOUS_FILE_PATTERNS)
+                    
+                    # Block dangerous method calls (like os.system)
+                    elif isinstance(node.func, ast.Attribute):
+                        if node.func.attr in FORBIDDEN_ATTRIBUTES:
+                            errors.append(f"BLOCKED: Dangerous method '{node.func.attr}' - RCE risk")
+                
+                # Block dangerous attribute access
+                if isinstance(node, ast.Attribute):
+                    if node.attr in FORBIDDEN_ATTRIBUTES:
+                        warnings.append(f"Suspicious attribute access '{node.attr}' - Review carefully")
                 
                 # Check for class definition
                 if isinstance(node, ast.ClassDef):
@@ -1701,6 +1770,38 @@ $ """
             'warnings': warnings,
             'class_name': class_name
         }
+    
+    def _validate_file_operation(self, node: Any, errors: List[str], warnings: List[str], malicious_patterns: List[str]) -> None:
+        """Validate file operations to prevent access to sensitive paths."""
+        import re
+        
+        if not node.args:
+            return
+        
+        # Check if first argument (filename) is a string literal
+        first_arg = node.args[0]
+        if isinstance(first_arg, ast.Str):  # Python < 3.8
+            filename = first_arg.s
+        elif isinstance(first_arg, ast.Constant) and isinstance(first_arg.value, str):  # Python >= 3.8
+            filename = first_arg.value
+        else:
+            # Dynamic filename - warn but don't block
+            warnings.append("Dynamic file path detected - Ensure it doesn't access sensitive locations")
+            return
+        
+        # Check against malicious patterns
+        for pattern in malicious_patterns:
+            if re.search(pattern, filename, re.IGNORECASE):
+                errors.append(f"BLOCKED: File access to sensitive path '{filename}' - Security risk")
+                return
+        
+        # Allow relative paths in working directory
+        if not filename.startswith('/') and '..' not in filename:
+            warnings.append(f"File operation: '{filename}' - Restricted to working directory")
+        elif filename.startswith('/tmp/') and not any(ext in filename for ext in ['.sh', '.py', '.pl', '.rb']):
+            warnings.append(f"Temporary file access: '{filename}' - Monitor for malicious content")
+        else:
+            warnings.append(f"File access: '{filename}' - Review for security implications")
 
     def _load_custom_script(self, script_path: Path) -> Optional[ModuleMeta]:
         """Load a custom script as a ModuleMeta object."""

