@@ -9,4 +9,5 @@ Flask-Login>=0.6.0
 Flask-WTF>=1.0.0
 Flask-SQLAlchemy>=2.5.0
 Flask-SocketIO>=5.0.0
-webauthn>=1.8.0 
+webauthn>=1.8.0
+beautifulsoup4>=4.12.0 
