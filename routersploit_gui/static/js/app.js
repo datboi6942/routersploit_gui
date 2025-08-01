@@ -2340,7 +2340,12 @@ Type 'help' for available offline commands.`;
 
     updateCustomScriptsUI(scripts) {
         const container = document.getElementById('customScriptsList');
-        if (!container) return;
+        if (!container) {
+            console.error('❌ customScriptsList container not found!');
+            return;
+        }
+
+        console.log('📝 Updating custom scripts UI with', scripts.length, 'scripts');
 
         if (!scripts || scripts.length === 0) {
             container.innerHTML = `
@@ -2351,7 +2356,15 @@ Type 'help' for available offline commands.`;
             return;
         }
 
-        container.innerHTML = scripts.map(script => `
+        container.innerHTML = scripts.map(script => {
+            console.log(`📋 Script validation status for ${script.name}:`, {
+                valid: script.valid,
+                errors: script.errors,
+                warnings: script.warnings,
+                class_name: script.class_name
+            });
+            
+            return `
             <div class="list-group-item list-group-item-action custom-script-item" data-script="${script.name}">
                 <div class="d-flex w-100 justify-content-between">
                     <h6 class="mb-1">${script.name}</h6>
@@ -2359,6 +2372,14 @@ Type 'help' for available offline commands.`;
                 </div>
                 <p class="mb-1">${script.class_name}</p>
                 <small>Size: ${(script.size / 1024).toFixed(1)} KB</small>
+                ${!script.valid && script.errors ? `
+                    <div class="mt-2">
+                        <small class="text-danger">Validation Errors:</small>
+                        <ul class="small text-danger mb-2">
+                            ${script.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
                 <div class="mt-2">
                     <button class="btn btn-primary btn-sm execute-script-btn" data-script="${script.name}" ${!script.valid ? 'disabled' : ''}>
                         <i class="fas fa-play"></i> Execute
@@ -2368,22 +2389,67 @@ Type 'help' for available offline commands.`;
                     </button>
                 </div>
             </div>
-        `).join('');
+            `
+        }).join('');
 
-        // Add event handlers
-        container.querySelectorAll('.execute-script-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const scriptName = e.target.closest('.execute-script-btn').dataset.script;
-                this.selectCustomScript(scriptName);
+        // Add event handlers using event delegation to avoid conflicts
+        console.log('🔧 Setting up event delegation for custom scripts buttons');
+        
+        // Remove any existing event listeners on the container
+        container.replaceWith(container.cloneNode(true));
+        const newContainer = document.getElementById('customScriptsList');
+        
+        // Use event delegation for better compatibility
+        newContainer.addEventListener('click', (e) => {
+            console.log('🔍 Click detected on container, target:', e.target.className);
+            
+            // Check if the clicked element or its parent is an execute button
+            let executeBtn = e.target.closest('.execute-script-btn');
+            if (executeBtn && executeBtn.dataset.script) {
+                console.log('🖱️ Execute button clicked via delegation:', executeBtn.dataset.script);
+                e.preventDefault();
+                e.stopPropagation();
+                this.selectCustomScript(executeBtn.dataset.script);
+                return;
+            }
+            
+            // Check for delete button
+            let deleteBtn = e.target.closest('.delete-script-btn');
+            if (deleteBtn && deleteBtn.dataset.script) {
+                console.log('🗑️ Delete button clicked via delegation:', deleteBtn.dataset.script);
+                e.preventDefault();
+                e.stopPropagation();
+                this.deleteCustomScript(deleteBtn.dataset.script);
+                return;
+            }
+        });
+        
+        // Also add direct event handlers as backup
+        const executeButtons = newContainer.querySelectorAll('.execute-script-btn');
+        console.log('🔧 Adding direct event handlers to', executeButtons.length, 'execute buttons as backup');
+        
+        executeButtons.forEach((btn, index) => {
+            const scriptName = btn.dataset.script;
+            console.log(`🔧 Setting up direct handler for button ${index + 1}: ${scriptName}`);
+            
+            // Test if button is clickable
+            console.log(`🔧 Button ${index + 1} properties:`, {
+                disabled: btn.disabled,
+                style: btn.style.cssText,
+                classList: [...btn.classList],
+                offsetWidth: btn.offsetWidth,
+                offsetHeight: btn.offsetHeight,
+                getBoundingClientRect: btn.getBoundingClientRect()
             });
+            
+            // Force the cursor style
+            btn.style.cursor = 'pointer';
+            btn.style.pointerEvents = 'auto';
         });
 
-        container.querySelectorAll('.delete-script-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const scriptName = e.target.closest('.delete-script-btn').dataset.script;
-                this.deleteCustomScript(scriptName);
-            });
-        });
+        // Delete button handlers are now handled by event delegation above
+        const deleteButtons = newContainer.querySelectorAll('.delete-script-btn');
+        console.log('🔧 Found', deleteButtons.length, 'delete buttons (handled by delegation)');
     }
 
     updateCustomScriptsCount(count) {
@@ -2449,7 +2515,7 @@ Type 'help' for available offline commands.`;
         }
     }
 
-    selectCustomScript(scriptName) {
+        selectCustomScript(scriptName) {
         console.log('📝 Selecting custom script:', scriptName);
         
         // Show script execution interface
@@ -2461,6 +2527,7 @@ Type 'help' for available offline commands.`;
         }
 
         if (executionContent) {
+            console.log('✅ Found scriptExecutionContent element, populating interface');
             executionContent.innerHTML = `
                 <div class="mb-3">
                     <h6>Script Options</h6>
@@ -2490,7 +2557,10 @@ Type 'help' for available offline commands.`;
                         <div class="text-muted">Ready to execute script...</div>
                     </div>
                 </div>
-            `;
+`;
+            console.log('✅ Script execution interface populated');
+        } else {
+            console.error('❌ scriptExecutionContent element not found!');
         }
     }
 

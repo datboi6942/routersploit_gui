@@ -1678,15 +1678,19 @@ $ """
                 'system', 'popen', 'spawn', 'spawnl', 'spawnle', 'spawnlp', 'spawnlpe',
                 'spawnv', 'spawnve', 'spawnvp', 'spawnvpe', 'execl', 'execle', 
                 'execlp', 'execlpe', 'execv', 'execve', 'execvp', 'execvpe',
-                'Popen', 'call', 'check_call', 'check_output', 'run',
+                'Popen', 'call', 'check_call', 'check_output', 
                 'getoutput', 'getstatusoutput'
             ]
+            
+            # Dangerous modules that should not be allowed to call 'run'
+            DANGEROUS_RUN_MODULES = ['subprocess', 'os']
             
             # Allowed controlled imports (networking/legitimate exploit functions)
             ALLOWED_CONTROLLED_IMPORTS = [
                 'socket', 'requests', 'urllib', 'http', 'ssl', 'hashlib', 
                 'base64', 'json', 'xml', 're', 'time', 'random', 'struct',
-                'binascii', 'zlib', 'threading', 'queue'
+                'binascii', 'zlib', 'threading', 'queue', 'typing', 'collections',
+                'itertools', 'functools', 'copy', 'datetime', 'math', 'string'
             ]
             
             # Controlled file operations (limited scope)
@@ -1712,6 +1716,11 @@ $ """
                 if isinstance(node, ast.ImportFrom):
                     if node.module in FORBIDDEN_IMPORTS:
                         errors.append(f"BLOCKED: Forbidden import from '{node.module}' - High RCE risk")
+                    elif node.module and node.module not in ALLOWED_CONTROLLED_IMPORTS:
+                        # Check if it's a submodule of an allowed module (e.g., requests.exceptions)
+                        base_module = node.module.split('.')[0]
+                        if base_module not in ALLOWED_CONTROLLED_IMPORTS:
+                            warnings.append(f"Unknown module '{node.module}' - Verify this is safe")
                     
                     # Check specific function imports
                     if node.names:
@@ -1734,11 +1743,32 @@ $ """
                     elif isinstance(node.func, ast.Attribute):
                         if node.func.attr in FORBIDDEN_ATTRIBUTES:
                             errors.append(f"BLOCKED: Dangerous method '{node.func.attr}' - RCE risk")
+                        # Special handling for 'run' method - only block if it's from dangerous modules
+                        elif node.func.attr == 'run':
+                            # Check if it's being called on a dangerous module (like subprocess.run)
+                            if isinstance(node.func.value, ast.Name) and node.func.value.id in DANGEROUS_RUN_MODULES:
+                                errors.append(f"BLOCKED: Dangerous method '{node.func.value.id}.run' - RCE risk")
+                            elif isinstance(node.func.value, ast.Attribute):
+                                # Handle chained attributes like subprocess.something.run
+                                attr_chain = []
+                                current = node.func.value
+                                while isinstance(current, ast.Attribute):
+                                    attr_chain.insert(0, current.attr)
+                                    current = current.value
+                                if isinstance(current, ast.Name):
+                                    attr_chain.insert(0, current.id)
+                                    if any(dangerous in '.'.join(attr_chain) for dangerous in DANGEROUS_RUN_MODULES):
+                                        errors.append(f"BLOCKED: Dangerous method '{'.'.join(attr_chain)}.run' - RCE risk")
                 
                 # Block dangerous attribute access
                 if isinstance(node, ast.Attribute):
                     if node.attr in FORBIDDEN_ATTRIBUTES:
                         warnings.append(f"Suspicious attribute access '{node.attr}' - Review carefully")
+                    # Don't flag 'run' attribute access as it's legitimate for exploit classes
+                    elif node.attr == 'run':
+                        # Only warn if it's from a dangerous module
+                        if isinstance(node.value, ast.Name) and node.value.id in DANGEROUS_RUN_MODULES:
+                            warnings.append(f"Suspicious attribute access '{node.value.id}.run' - Review carefully")
                 
                 # Check for class definition
                 if isinstance(node, ast.ClassDef):

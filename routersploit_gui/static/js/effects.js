@@ -131,15 +131,8 @@ class EffectsManager {
             this.toggleSound();
         });
 
-        // Theme toggle
-        document.getElementById('themeToggle')?.addEventListener('click', () => {
-            this.toggleTheme();
-        });
-
-        // Fullscreen toggle
-        document.getElementById('fullscreenToggle')?.addEventListener('click', () => {
-            this.toggleFullscreen();
-        });
+        // Theme toggle and Fullscreen toggle are handled by app.js to avoid conflicts
+        // Removed duplicate handlers to prevent event conflicts
 
         // Add click sounds to all buttons
         document.querySelectorAll('.btn').forEach(btn => {
@@ -157,63 +150,8 @@ class EffectsManager {
         });
     }
 
-    // Theme Toggle
-    toggleTheme() {
-        const root = document.documentElement;
-        const themeToggle = document.getElementById('themeToggle');
-        const currentTheme = root.getAttribute('data-theme') || 'cyberpunk';
-        
-        if (currentTheme === 'cyberpunk') {
-            this.setTheme('neon');
-        } else if (currentTheme === 'neon') {
-            this.setTheme('classic');
-        } else {
-            this.setTheme('cyberpunk');
-        }
-        
-        this.playSound('click');
-    }
-
-    setTheme(theme) {
-        const root = document.documentElement;
-        root.setAttribute('data-theme', theme);
-        
-        const themes = {
-            cyberpunk: {
-                primary: '#00ffff',
-                secondary: '#ff00ff',
-                accent: '#ffff00'
-            },
-            neon: {
-                primary: '#ff0080',
-                secondary: '#00ff80',
-                accent: '#8000ff'
-            },
-            classic: {
-                primary: '#0080ff',
-                secondary: '#ff8000',
-                accent: '#80ff00'
-            }
-        };
-        
-        if (themes[theme]) {
-            root.style.setProperty('--primary-neon', themes[theme].primary);
-            root.style.setProperty('--secondary-neon', themes[theme].secondary);
-            root.style.setProperty('--accent-neon', themes[theme].accent);
-        }
-    }
-
-    // Fullscreen Toggle
-    toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(e => {
-                console.log('Fullscreen failed:', e);
-            });
-        } else {
-            document.exitFullscreen();
-        }
-        this.playSound('click');
-    }
+    // Theme Toggle and Fullscreen Toggle functions moved to app.js to avoid conflicts
+    // These functions are no longer used here to prevent duplicate event handlers
 
     // Window Resize Handler
     handleResize() {
